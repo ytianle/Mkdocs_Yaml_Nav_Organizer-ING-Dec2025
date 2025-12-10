@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <title>MkDocs Nav Manager</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+
+<body>
+  <div class="app-shell">
+    <header class="toolbar">
+      <h1>MkDocs Nav Manager</h1>
+      <div class="toolbar-actions">
+        <input id="search-input" type="search" placeholder="Search nav..." aria-label="Search navigation">
+        <div class="button-group">
+          <button id="undo-btn" type="button" disabled>Undo</button>
+          <button id="reload-btn" type="button">Reload</button>
+          <button id="save-btn" type="button">Save</button>
+        </div>
+      </div>
+    </header>
+    <div class="panes">
+      <section class="card" aria-label="Source explorer">
+        <div class="card-head">
+          <h2>Source Explorer</h2>
+          <span class="muted-text">Click to highlight in Nav</span>
+        </div>
+        <div id="source-explorer" class="list-shell">Loading...</div>
+      </section>
+      <section class="card nav-card" aria-label="Navigation editor">
+        <div class="card-head">
+          <h2>Navigation</h2>
+          <span class="muted-text">Drag to reorder</span>
+        </div>
+        <div id="nav-tree" class="list-shell">Loading...</div>
+      </section>
+    </div>
+    <footer id="status" data-type="info"></footer>
+  </div>
+
+  <script>
+    let draggedItem = null;
+    let dropLine = null;
+    let dropState = { mode: null, target: null, reference: null };
+    let historyStack = [];
+    let pendingHistorySnapshot = null;
+    let currentTree = [];
+    let currentSource = [];
+    let currentSearchTerm = '';
+
+    const MAX_HISTORY = 40;
+
+    document.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('save-btn').addEventListener('click', handleSave);
+      document.getElementById('reload-btn').addEventListener('click', () => {
+        fetchNav();
+        fetchSource();
+      });
+      document.getElementById('undo-btn').addEventListener('click', handleUndo);
+      document.getElementById('search-input').addEventListener('input', handleSearch);
+      const navContainer = document.getElementById('nav-tree');
+      navContainer.addEventListener('dragover', handleRootDragOver);
+      navContainer.addEventListener('drop', handleRootDrop);
+      fetchNav();
+      fetchSource();
+    });
+
+    async function fetchNav() {
+      setStatus('Loading navigation...', 'info');
+      try {
+        const response = await fetch('/nav');
+        if (!response.ok) {
+          throw new Error('Failed to load navigation.');
+        }
+        const data = await response.json();
+        const missing = Array.isArray(data.missing) ? data.missing : [];
+        const docsRoot = data.docs_root || '';
+        const tree = Array.isArray(data) ? data : (Array.isArray(data.tree) ? data.tree : []);
+        historyStack = [];
+        currentTree = Array.isArray(tree) ? tree : [];
+        pendingHistorySnapshot = null;
+        if (missing.length) {
+          const detail = missing.map(item => {
+            return item.line ? `${item.path} (line ${item.line})` : item.path;
+          }).join('; ');
+          const hasCase = missing.some(m => m.case_mismatch);
+          const extra = hasCase ? ' (check filename case)' : '';
+          document.getElementById('nav-tree').textContent = `Nav has missing files: ${detail}${extra}`;
+          setStatus(`Missing: ${detail}${extra}${docsRoot ? ` @ ${docsRoot}` : ''}`, 'error');
+          updateUndoButton();
+          return;
+        }
+        renderTree(currentTree);
+        setStatus('Navigation loaded.', 'success');
+        updateUndoButton();
+      } catch (err) {
+        setStatus(err.message || 'Unable to load navigation.', 'error');
+        document.getElementById('nav-tree').textContent = 'No navigation loaded.';
+      }
+    }
+
+    function renderTree(tree) {
+      const container = document.getElementById('nav-tree');
+      clearDropState();
+      draggedItem = null;
+      container.innerHTML = '';
+      if (!tree || !tree.length) {
+        container.textContent = '(nav is empty)';
+        return;
+      }
+      const list = buildList(tree);
+      container.appendChild(list);
+      ensureDropLine();
+      applySearchFilter(currentSearchTerm);
+    }
+
+    function renderExplorer(tree) {
+      const container = document.getElementById('source-explorer');
+      container.innerHTML = '';
+      if (!Array.isArray(tree) || !tree.length) {
+        container.textContent = '(no markdown files found)';
+        return;
+      }
+      const list = buildExplorerList(tree);
+      container.appendChild(list);
+    }
+
+    async function fetchSource() {
+      const container = document.getElementById('source-explorer');
+      container.textContent = 'Loading...';
+      try {
+        const response = await fetch('/source');
+        if (!response.ok) {
+          throw new Error('Failed to load source tree.');
+        }
+        const data = await response.json();
+        currentSource = Array.isArray(data) ? data : [];
+        renderExplorer(currentSource);
+      } catch (err) {
+        container.textContent = 'Unable to load source tree.';
+        setStatus(err.message || 'Unable to load source tree.', 'error');
+      }
+    }
+
+    function buildList(nodes) {
+      const ul = document.createElement('ul');
+      attachListEvents(ul);
+      (nodes || []).forEach(node => {
+        const li = document.createElement('li');
+        const titleText = node.title || '(untitled)';
+        const pathText = node.path || '';
+        const filename = pathText ? pathText.split('/').pop() : '';
+        const titleDisplay = filename || titleText;
+        const pathDisplay = pathText
+          ? (pathText.startsWith('./') || pathText.startsWith('/') ? pathText : './' + pathText)
+          : '';
+
+        li.draggable = true;
+        li.dataset.id = node.id || '';
+        li.dataset.title = titleText;
+        li.dataset.path = pathText;
+        li.dataset.pathNormalized = normalizePath(pathText);
+        li.dataset.titleLower = (titleDisplay || '').toLowerCase();
+        li.dataset.pathLower = pathText.toLowerCase();
+
+        const row = document.createElement('div');
+        row.className = 'item-row';
+
+        const titleSpan = document.createElement('span');
+        titleSpan.className = 'item-title';
+        titleSpan.textContent = titleDisplay;
+        titleSpan.addEventListener('dblclick', handleTitleEdit);
+        row.appendChild(titleSpan);
+
+        if (pathText) {
+          const pathSpan = document.createElement('span');
+          pathSpan.className = 'item-path';
+          pathSpan.textContent = pathDisplay;
+          row.appendChild(pathSpan);
+        }
+
+        li.appendChild(row);
+
+        li.addEventListener('dragstart', handleDragStart);
+        li.addEventListener('dragend', handleDragEnd);
+        li.addEventListener('dragenter', handleDragEnter);
+        li.addEventListener('dragleave', handleDragLeave);
+        li.addEventListener('dragover', handleDragOver);
+        li.addEventListener('drop', handleDrop);
+
+        if (Array.isArray(node.children) && node.children.length) {
+          const childList = buildList(node.children);
+          li.appendChild(childList);
+        }
+
+        ul.appendChild(li);
+      });
+      return ul;
+    }
+
+    function buildExplorerList(nodes) {
+      const ul = document.createElement('ul');
+      (nodes || []).forEach(node => {
+        const li = document.createElement('li');
+        li.className = 'explorer-item ' + (node.kind === 'dir' ? 'explorer-dir' : 'explorer-file');
+        const nameText = node.name || '(unnamed)';
+        const pathText = node.path || '';
+        const pathDisplay = pathText
+          ? (pathText.startsWith('./') || pathText.startsWith('/') ? pathText : './' + pathText)
+          : './';
+
+        const titleSpan = document.createElement('span');
+        titleSpan.className = 'item-title';
+        titleSpan.textContent = nameText;
+        li.appendChild(titleSpan);
+
+        if (pathDisplay && node.path) {
+          const pathSpan = document.createElement('span');
+          pathSpan.className = 'item-path';
+          pathSpan.textContent = pathDisplay;
+          li.appendChild(pathSpan);
+        }
+
+        if (node.path) {
+          li.addEventListener('click', (e) => {
+            e.stopPropagation();
+            highlightNavByPath(node.path, node.kind === 'dir');
+          });
+        }
+
+        if (Array.isArray(node.children) && node.children.length) {
+          const childList = buildExplorerList(node.children);
+          li.appendChild(childList);
+        }
+        ul.appendChild(li);
+      });
+      return ul;
+    }
+
+    function attachListEvents(ul) {
+      ul.addEventListener('dragover', handleListDragOver);
+      ul.addEventListener('drop', handleListDrop);
+    }
+
+    function handleDragStart(event) {
+      draggedItem = event.currentTarget;
+      pendingHistorySnapshot = deepClone(currentTree);
+      draggedItem.classList.add('dragging');
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('text/plain', draggedItem.dataset.id || '');
+      ensureDropLine();
+    }
+
+    function handleDragEnd() {
+      if (draggedItem) {
+        draggedItem.classList.remove('dragging');
+      }
+      document.querySelectorAll('#nav-tree .dragover').forEach(el => el.classList.remove('dragover'));
+      clearDropState();
+      draggedItem = null;
+      pendingHistorySnapshot = null;
+    }
+
+    function handleDragEnter(event) {
+      if (!draggedItem) {
+        return;
+      }
+      const target = event.currentTarget;
+      if (draggedItem === target) {
+        return;
+      }
+      if (draggedItem.contains(target)) {
+        return;
+      }
+      target.classList.add('dragover');
+    }
+
+    function handleDragLeave(event) {
+      const target = event.currentTarget;
+      target.classList.remove('dragover');
+      if (dropState.mode === 'inside' && dropState.target === target) {
+        target.classList.remove('drop-inside');
+      }
+    }
+
+    function handleDragOver(event) {
+      if (!draggedItem) {
+        return;
+      }
+      const target = event.currentTarget;
+      if (draggedItem === target) {
+        return;
+      }
+      if (draggedItem.contains(target)) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      const rect = target.getBoundingClientRect();
+      const offset = event.clientY - rect.top;
+      const ratio = rect.height ? offset / rect.height : 0.5;
+      const targetHasPath = (target.dataset.path || '').trim() !== '';
+      let mode = 'inside';
+      if (ratio <= 0.25) {
+        mode = 'before';
+      } else if (ratio >= 0.75) {
+        mode = 'after';
+      }
+      if (targetHasPath && mode === 'inside') {
+        mode = ratio < 0.5 ? 'before' : 'after';
+      }
+      updateDropVisual(target, mode);
+    }
+
+    function handleDrop(event) {
+      if (!draggedItem) {
+        return;
+      }
+      event.stopPropagation();
+      const target = event.currentTarget;
+      if (draggedItem === target) {
+        return;
+      }
+      if (draggedItem.contains(target)) {
+        return;
+      }
+      event.preventDefault();
+      let mode = dropState.mode || 'after';
+      const destination = dropState.target || target;
+      const destinationHasPath = (destination.dataset.path || '').trim() !== '';
+      if (mode === 'inside' && destinationHasPath) {
+        mode = 'after';
+      }
+
+      if (mode === 'inside') {
+        let childList = destination.querySelector(':scope > ul');
+        if (!childList) {
+          childList = document.createElement('ul');
+          attachListEvents(childList);
+          destination.appendChild(childList);
+        }
+        childList.appendChild(draggedItem);
+      } else if (mode === 'before') {
+        destination.parentElement.insertBefore(draggedItem, destination);
+      } else {
+        destination.parentElement.insertBefore(draggedItem, destination.nextSibling);
+      }
+
+      destination.classList.remove('dragover');
+      clearDropState();
+      commitDomChanges('Item moved.');
+    }
+
+    function handleListDragOver(event) {
+      if (!draggedItem) {
+        return;
+      }
+      event.stopPropagation();
+      const list = event.currentTarget;
+      if (draggedItem.contains(list)) {
+        return;
+      }
+      event.preventDefault();
+      const items = Array.from(list.children).filter(child => child.tagName === 'LI');
+      if (!items.length) {
+        removeDropLine();
+        list.classList.add('drop-inside');
+        dropState = { mode: 'list', target: list, reference: null };
+      } else {
+        const last = items[items.length - 1];
+        positionDropLine(last, true);
+        dropState = { mode: 'list', target: list, reference: last };
+      }
+    }
+
+    function handleListDrop(event) {
+      if (!draggedItem) {
+        return;
+      }
+      event.stopPropagation();
+      const list = event.currentTarget;
+      if (draggedItem.contains(list)) {
+        return;
+      }
+      event.preventDefault();
+      list.classList.remove('drop-inside');
+      list.appendChild(draggedItem);
+      clearDropState();
+      commitDomChanges('Item moved.');
+    }
+
+    function handleRootDragOver(event) {
+      if (!draggedItem) {
+        return;
+      }
+      const container = event.currentTarget;
+      const rootList = container.querySelector(':scope > ul');
+      if (rootList && draggedItem.contains(rootList)) {
+        return;
+      }
+      event.preventDefault();
+      const list = rootList || container;
+      const items = rootList ? Array.from(rootList.children).filter(child => child.tagName === 'LI') : [];
+      if (!items.length) {
+        removeDropLine();
+        list.classList.add('drop-inside');
+        dropState = { mode: 'list', target: list, reference: null };
+      } else {
+        const last = items[items.length - 1];
+        positionDropLine(last, true);
+        dropState = { mode: 'list', target: list, reference: last };
+      }
+    }
+
+    function handleRootDrop(event) {
+      if (!draggedItem) {
+        return;
+      }
+      const container = event.currentTarget;
+      const rootList = container.querySelector(':scope > ul') || (() => {
+        const ul = document.createElement('ul');
+        attachListEvents(ul);
+        container.innerHTML = '';
+        container.appendChild(ul);
+        return ul;
+      })();
+      event.preventDefault();
+      rootList.classList.remove('drop-inside');
+      rootList.appendChild(draggedItem);
+      clearDropState();
+      commitDomChanges('Item moved.');
+    }
+
+    function updateDropVisual(target, mode) {
+      document.querySelectorAll('#nav-tree .drop-inside').forEach(el => el.classList.remove('drop-inside'));
+      if (mode === 'inside') {
+        removeDropLine();
+        target.classList.add('drop-inside');
+      } else {
+        target.classList.remove('drop-inside');
+        positionDropLine(target, mode === 'after');
+      }
+      dropState = { mode, target, reference: null };
+    }
+
+    function ensureDropLine() {
+      if (!dropLine) {
+        dropLine = document.createElement('div');
+        dropLine.className = 'drop-line';
+        document.body.appendChild(dropLine);
+      }
+    }
+
+    function removeDropLine() {
+      if (dropLine && dropLine.parentElement) {
+        dropLine.parentElement.removeChild(dropLine);
+      }
+      dropLine = null;
+    }
+
+    function positionDropLine(target, placeAfter) {
+      ensureDropLine();
+      const rect = target.getBoundingClientRect();
+      const y = placeAfter ? rect.bottom : rect.top;
+      dropLine.style.left = rect.left + 'px';
+      dropLine.style.width = rect.width + 'px';
+      dropLine.style.top = (y - 1) + 'px';
+    }
+
+    function clearDropState() {
+      removeDropLine();
+      document.querySelectorAll('#nav-tree .drop-inside').forEach(el => el.classList.remove('drop-inside'));
+      dropState = { mode: null, target: null, reference: null };
+    }
+
+    function commitDomChanges(message) {
+      const container = document.getElementById('nav-tree');
+      const rootList = container.querySelector(':scope > ul');
+
+      // 直接从当前 DOM 序列化成新的 tree
+      const newTree = rootList ? serializeList(rootList) : [];
+
+      // 在 dragstart 的时候我们已经做过 deepClone 了
+      // 这里直接用 snapshot 进历史栈就行，不再做 JSON.stringify 比较 old/new
+      const snapshot = pendingHistorySnapshot || deepClone(currentTree);
+      if (snapshot) {
+        pushHistorySnapshot(snapshot);
+      }
+
+      currentTree = newTree;
+
+      // 重新渲染一次，让“文件变文件夹”等结构性的变化马上体现在 UI 上
+      renderTree(currentTree);
+
+      setStatus(message || 'Structure updated.', 'success');
+      pendingHistorySnapshot = null;
+      updateUndoButton();
+    }
+
+    function serializeList(listElement) {
+      const items = [];
+      Array.from(listElement.children).forEach(child => {
+        if (child.tagName !== 'LI') {
+          return;
+        }
+        const childList = child.querySelector(':scope > ul');
+        const id = child.dataset.id || '';
+        const title = child.dataset.title || '';
+        const pathText = child.dataset.path ? child.dataset.path : null;
+        const serializedChildren = childList ? serializeList(childList) : [];
+
+        // If a node has both a path and children (e.g., user dropped into a file),
+        // convert the node into a folder and keep the original file as the first child.
+        if (pathText && serializedChildren.length) {
+          const filename = pathText.split('/').pop() || pathText;
+          const childTitle = title || filename;
+          const normalizedChildPath = normalizePath(pathText);
+          const alreadyExists = serializedChildren.some(
+            c => normalizePath(c.path || '') === normalizedChildPath
+          );
+          const ownFileNode = alreadyExists ? [] : [{
+            id: `${id || 'auto'}::file`,
+            title: childTitle,
+            path: pathText,
+            children: []
+          }];
+          items.push({
+            id,
+            title,
+            path: null,
+            children: ownFileNode.concat(serializedChildren)
+          });
+        } else {
+          items.push({
+            id,
+            title,
+            path: pathText,
+            children: serializedChildren
+          });
+        }
+      });
+      return items;
+    }
+
+    function handleTitleEdit(event) {
+      event.stopPropagation();
+      const span = event.currentTarget;
+      const li = span.closest('li');
+      if (!li) {
+        return;
+      }
+      const originalTitle = span.textContent;
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.value = originalTitle;
+      input.className = 'inline-edit';
+      li.draggable = false;
+      span.replaceWith(input);
+      input.focus();
+      input.select();
+
+      const cancel = () => {
+        input.replaceWith(span);
+        span.textContent = originalTitle;
+        li.draggable = true;
+      };
+
+      const commit = () => {
+        const newTitle = input.value.trim() || originalTitle.trim();
+        input.replaceWith(span);
+        span.textContent = newTitle;
+        li.draggable = true;
+        if (newTitle !== originalTitle) {
+          pushHistorySnapshot(deepClone(currentTree));
+          updateNodeById(currentTree, li.dataset.id, node => {
+            node.title = newTitle;
+          });
+          li.dataset.title = newTitle;
+          li.dataset.titleLower = newTitle.toLowerCase();
+          renderTree(currentTree);
+          setStatus('Renamed item.', 'success');
+        }
+      };
+
+      input.addEventListener('keydown', e => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          commit();
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          cancel();
+        }
+      });
+
+      input.addEventListener('blur', () => commit());
+    }
+
+    function updateNodeById(nodes, id, updater) {
+      if (!Array.isArray(nodes)) {
+        return false;
+      }
+      for (const node of nodes) {
+        if (node.id === id) {
+          updater(node);
+          return true;
+        }
+        if (updateNodeById(node.children, id, updater)) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    function pushHistorySnapshot(snapshot) {
+      if (!snapshot) {
+        return;
+      }
+      const signature = JSON.stringify(snapshot);
+      const last = historyStack[historyStack.length - 1];
+      if (last && last.signature === signature) {
+        return;
+      }
+      historyStack.push({ tree: snapshot, signature });
+      if (historyStack.length > MAX_HISTORY) {
+        historyStack.shift();
+      }
+      updateUndoButton();
+    }
+
+    function handleUndo() {
+      if (!historyStack.length) {
+        setStatus('Nothing to undo.', 'info');
+        return;
+      }
+      const entry = historyStack.pop();
+      currentTree = deepClone(entry.tree);
+      renderTree(currentTree);
+      setStatus('Undid last action.', 'success');
+      updateUndoButton();
+    }
+
+    function handleSave() {
+      syncTreeFromDom();
+      if (!Array.isArray(currentTree)) {
+        setStatus('Nothing to save.', 'info');
+        return;
+      }
+      setStatus('Saving...', 'info');
+      fetch('/nav', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(currentTree)
+      })
+        .then(response => {
+          if (!response.ok) {
+            return response.json().then(data => {
+              throw new Error(data.error || 'Save failed.');
+            }).catch(() => {
+              throw new Error('Save failed.');
+            });
+          }
+          return response.json();
+        })
+        .then(() => {
+          setStatus('Navigation saved.', 'success');
+        })
+        .catch(err => {
+          setStatus(err.message || 'Save failed.', 'error');
+        });
+    }
+
+    function syncTreeFromDom() {
+      const container = document.getElementById('nav-tree');
+      const rootList = container.querySelector(':scope > ul');
+      currentTree = rootList ? serializeList(rootList) : [];
+    }
+
+    function handleSearch(event) {
+      currentSearchTerm = event.target.value;
+      applySearchFilter(currentSearchTerm);
+    }
+
+    function applySearchFilter(term) {
+      const normalized = (term || '').trim().toLowerCase();
+      const items = document.querySelectorAll('#nav-tree li');
+      if (!normalized) {
+        items.forEach(li => {
+          li.classList.remove('match', 'branch-match', 'dimmed');
+        });
+        return;
+      }
+      items.forEach(li => {
+        const title = li.dataset.titleLower || '';
+        const path = li.dataset.pathLower || '';
+        const isMatch = title.includes(normalized) || path.includes(normalized);
+        li.classList.toggle('match', isMatch);
+        li.classList.remove('branch-match', 'dimmed');
+      });
+      items.forEach(li => {
+        if (li.classList.contains('match')) {
+          return;
+        }
+        const descendantMatch = li.querySelector('.match');
+        if (descendantMatch) {
+          li.classList.add('branch-match');
+        } else {
+          li.classList.add('dimmed');
+        }
+      });
+    }
+
+    function updateUndoButton() {
+      const undoBtn = document.getElementById('undo-btn');
+      if (!undoBtn) {
+        return;
+      }
+      undoBtn.disabled = historyStack.length === 0;
+    }
+
+    function highlightNavByPath(path, isDir) {
+      const normalized = normalizePath(path);
+      if (!normalized) {
+        return;
+      }
+      const items = Array.from(document.querySelectorAll('#nav-tree li')).filter(li => li.dataset.pathNormalized);
+      items.forEach(li => li.classList.remove('flash-highlight'));
+      const exact = items.find(li => li.dataset.pathNormalized === normalized);
+      const target = exact ||
+        (isDir ? items.find(li => li.dataset.pathNormalized.startsWith(normalized + '/')) : null);
+      if (!target) {
+        setStatus('Item not found in navigation.', 'info');
+        return;
+      }
+      target.classList.add('flash-highlight');
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setTimeout(() => target.classList.remove('flash-highlight'), 900);
+    }
+
+    function normalizePath(path) {
+      if (!path) return '';
+      return path.trim()
+        .replace(/^\.\//, '')
+        .replace(/\\/g, '/')
+        .replace(/\/+/g, '/')
+        .toLowerCase();
+    }
+
+    function setStatus(message, type) {
+      const status = document.getElementById('status');
+      status.textContent = message || '';
+      status.dataset.type = type || 'info';
+    }
+
+    function deepClone(value) {
+      return JSON.parse(JSON.stringify(value));
+    }
+  </script>
+</body>
+
+</html>
