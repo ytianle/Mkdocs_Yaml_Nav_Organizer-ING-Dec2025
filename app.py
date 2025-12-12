@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import os
+from collections import Counter
 from datetime import datetime
 from itertools import count
 from pathlib import Path
 from shutil import copy2
 from typing import Any, Iterable, Iterator
+import re
 
 from flask import Flask, jsonify, render_template, request
 from ruamel.yaml import YAML
@@ -82,6 +84,35 @@ class NavStorage:
 
 
 DOCS_ROOT = _resolve_docs_root()
+
+
+def _normalize_rel_path(path: str) -> str:
+    """Normalize a nav path to a clean, POSIX-like relative form."""
+    cleaned = (path or "").strip().replace("\\", "/")
+    cleaned = re.sub(r"/+", "/", cleaned)
+    cleaned = cleaned.lstrip("./")
+    return cleaned
+
+
+def _slugify_segment(title: str) -> str:
+    """Convert a nav title into a filesystem-friendly directory name."""
+    slug = re.sub(r"[^0-9A-Za-z._-]+", "-", (title or "").strip().lower())
+    slug = slug.strip("-")
+    return slug or "section"
+
+
+def _collect_paths(nodes: list[dict[str, Any]]) -> list[str]:
+    paths: list[str] = []
+
+    def _walk(items: list[dict[str, Any]]):
+        for node in items:
+            path = node.get("path")
+            if path:
+                paths.append(_normalize_rel_path(path))
+            _walk(node.get("children") or [])
+
+    _walk(nodes or [])
+    return paths
 
 
 def _backup_file(path: Path) -> Path | None:
@@ -214,6 +245,117 @@ def _validate_paths_exist(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return missing
 
 
+def _derive_folder_segment(node: dict[str, Any], parent_base: str) -> str | None:
+    """Try to infer the folder name from existing child paths."""
+    candidates: list[str] = []
+
+    def _collect(items: list[dict[str, Any]]):
+        for child in items:
+            path = child.get("path")
+            if path:
+                normalized = _normalize_rel_path(path)
+                remainder = normalized
+                if parent_base:
+                    prefix = f"{parent_base}/"
+                    if normalized.startswith(prefix):
+                        remainder = normalized[len(prefix):]
+                parts = remainder.split("/")
+                if parts and parts[0]:
+                    candidates.append(parts[0])
+            _collect(child.get("children") or [])
+
+    _collect(node.get("children") or [])
+    if not candidates:
+        return None
+    counter = Counter(candidates)
+    return counter.most_common(1)[0][0]
+
+
+def _rebase_tree(nodes: list[dict[str, Any]], parent_base: str = "") -> tuple[list[dict[str, Any]], list[tuple[str, str]]]:
+    """Rebuild a nav tree so that file paths follow the logical folder structure.
+
+    Returns (new_tree, moves) where moves is a list of (old_path, new_path) for files
+    that need to be moved on disk.
+    """
+    rebased: list[dict[str, Any]] = []
+    moves: list[tuple[str, str]] = []
+
+    def _join(base: str, name: str) -> str:
+        return f"{base}/{name}" if base else name
+
+    for node in nodes:
+        title = (node.get("title") or "").strip() or "untitled"
+        path = _normalize_rel_path(node.get("path") or "")
+        children = node.get("children") or []
+        node_id = node.get("id")
+
+        if children:
+            segment = _derive_folder_segment(node, parent_base) or _slugify_segment(title)
+            folder_base = _join(parent_base, segment)
+            rebased_children, child_moves = _rebase_tree(children, folder_base)
+            rebased.append({
+                "id": node_id,
+                "title": title,
+                "path": None,
+                "children": rebased_children,
+            })
+            moves.extend(child_moves)
+            continue
+
+        filename = Path(path).name if path else f"{_slugify_segment(title)}.md"
+        new_path = _join(parent_base, filename) if parent_base else filename
+        if path and path != new_path:
+            moves.append((path, new_path))
+            # If the title was just mirroring the old path, keep it in sync with the new path
+            if title.lower() == path.lower():
+                title = new_path
+        rebased.append({
+            "id": node_id,
+            "title": title,
+            "path": new_path,
+            "children": [],
+        })
+
+    return rebased, moves
+
+
+def _apply_moves(moves: list[tuple[str, str]]) -> None:
+    """Move files on disk according to the provided mapping."""
+    for src_rel, dst_rel in moves:
+        src_path = DOCS_ROOT / src_rel
+        dst_path = DOCS_ROOT / dst_rel
+        if not src_path.exists():
+            raise FileNotFoundError(f"Source file not found: {src_rel}")
+        dst_path.parent.mkdir(parents=True, exist_ok=True)
+        if dst_path.exists():
+            raise FileExistsError(f"Target already exists: {dst_rel}")
+        src_path.rename(dst_path)
+
+    # Clean up empty source directories after moves.
+    source_dirs: set[Path] = set()
+    for src_rel, _ in moves:
+        source_dirs.add((DOCS_ROOT / src_rel).parent)
+    _cleanup_empty_dirs(source_dirs)
+
+
+def _cleanup_empty_dirs(paths: Iterable[Path]) -> None:
+    """Remove empty directories under DOCS_ROOT, stopping at DOCS_ROOT."""
+    to_check: set[Path] = set()
+    for path in paths:
+        current = path
+        while DOCS_ROOT in current.parents and current != DOCS_ROOT:
+            to_check.add(current)
+            current = current.parent
+
+    # Remove deepest first so parents can become empty.
+    for directory in sorted(to_check, key=lambda p: len(p.parts), reverse=True):
+        try:
+            directory.rmdir()
+        except OSError:
+            # Not empty or not removable; ignore.
+            continue
+
+
 def _path_exists_case_sensitive(rel_path: str) -> tuple[bool, bool]:
     """Check existence with case sensitivity, even on case-insensitive filesystems.
 
@@ -327,25 +469,73 @@ def update_nav():
 
     try:
         validated_payload = _validate_tree_payload(payload)
-        missing_paths = _validate_paths_exist(validated_payload)
-        if missing_paths:
-            return jsonify({
-                "error": "Missing markdown files.",
-                "missing": missing_paths,
-                "docs_root": str(DOCS_ROOT),
-            }), 400
-        new_nav = _tree_to_nav(validated_payload)
     except ValueError as exc:
         return jsonify({"error": f"Invalid nav payload: {exc}"}), 400
     except Exception as exc:  # pragma: no cover - defensive
         return jsonify({"error": f"Invalid nav payload: {exc}"}), 400
+
+    # Confirm the currently referenced files exist before we start moving things.
+    missing_paths = _validate_paths_exist(validated_payload)
+    if missing_paths:
+        return jsonify({
+            "error": "Missing markdown files.",
+            "missing": missing_paths,
+            "docs_root": str(DOCS_ROOT),
+        }), 400
+
+    # Rebase paths to reflect the new logical folder positions.
+    try:
+        rebased_tree, planned_moves = _rebase_tree(validated_payload)
+    except Exception as exc:  # pragma: no cover - defensive
+        return jsonify({"error": f"Invalid nav payload: {exc}"}), 400
+
+    planned_moves = [(src, dst) for src, dst in planned_moves if src != dst]
+    final_paths = _collect_paths(rebased_tree)
+    if len(final_paths) != len(set(final_paths)):
+        return jsonify({"error": "Duplicate target paths after reordering."}), 400
+
+    existing_paths = set(_collect_paths(validated_payload))
+    collisions: list[dict[str, str]] = []
+    for src, dst in planned_moves:
+        if dst in existing_paths and dst != src:
+            collisions.append({"source": src, "target": dst, "reason": "target already referenced in nav"})
+            continue
+        if (DOCS_ROOT / dst).exists() and dst not in existing_paths:
+            collisions.append({"source": src, "target": dst, "reason": "target already exists on disk"})
+
+    if collisions:
+        return jsonify({
+            "error": "Conflicting target paths.",
+            "collisions": collisions,
+        }), 400
+
+    try:
+        _apply_moves(planned_moves)
+    except (FileNotFoundError, FileExistsError) as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:  # pragma: no cover - defensive
+        return jsonify({"error": f"Failed to move files: {exc}"}), 500
+
+    # After moving files, ensure the rebased nav points to valid locations.
+    rebased_missing = _validate_paths_exist(rebased_tree)
+    if rebased_missing:
+        return jsonify({
+            "error": "Missing markdown files after applying moves.",
+            "missing": rebased_missing,
+            "docs_root": str(DOCS_ROOT),
+        }), 500
+
+    new_nav = _tree_to_nav(rebased_tree)
 
     storage = NavStorage(MKDOCS_PATH)
     try:
         backup_path = storage.save_nav(new_nav)
     except Exception as exc:  # pragma: no cover - defensive
         return jsonify({"error": f"Failed to save nav: {exc}"}), 500
-    response = {"status": "ok"}
+    response = {
+        "status": "ok",
+        "moves_applied": len(planned_moves),
+    }
     if backup_path:
         response["backup"] = str(backup_path)
     return jsonify(response)

@@ -2,6 +2,6 @@ site_name: Mock test
 nav:
 - Guide:
   - guide/intro.md
-  - guide/setup.md
   - Index:
-    - guide/index/index.md
+    - index/index.md
+  - guide/setup.md

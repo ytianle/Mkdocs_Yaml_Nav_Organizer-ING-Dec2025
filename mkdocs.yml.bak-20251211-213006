@@ -3,5 +3,5 @@ nav:
 - Guide:
   - guide/intro.md
   - guide/setup.md
-  - Index:
-    - guide/index/index.md
+- Index:
+  - index/index.md

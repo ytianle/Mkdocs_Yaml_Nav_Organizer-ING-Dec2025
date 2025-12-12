@@ -666,6 +666,8 @@
         })
         .then(() => {
           setStatus('Navigation saved.', 'success');
+          fetchNav();
+          fetchSource();
         })
         .catch(err => {
           setStatus(err.message || 'Save failed.', 'error');
