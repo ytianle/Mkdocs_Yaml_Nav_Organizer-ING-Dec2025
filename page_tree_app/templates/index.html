@@ -35,16 +35,19 @@
       <section class="card">
         <div class="card-head">
           <h2>Source</h2>
-          <span class="muted">Click to locate in tree</span>
+          <div class="inline-actions">
+            <span class="muted">Click to locate in tree</span>
+            <button id="source-view-btn" type="button" class="ghost" title="Toggle ASCII tree view">🧾 ASCII</button>
+          </div>
         </div>
         <div id="source" class="list-shell">Loading...</div>
       </section>
 
       <section class="card">
         <div class="card-head">
-          <h2>Tree</h2>
+          <h2>📚 Doc Tree</h2>
           <div class="inline-actions">
-            <button id="new-folder-btn" type="button">New Folder</button>
+            <button id="new-folder-btn" type="button">New Section</button>
             <button id="new-page-btn" type="button">New Page</button>
             <button id="rename-btn" type="button">Rename</button>
             <button id="delete-btn" type="button">Delete</button>
@@ -71,6 +74,8 @@
     let els = {};
     let stateTree = [];
     let sourceTree = [];
+    let sourceView = 'list';
+    let sourceCollapsed = new Set();
     let selectedId = '';
     let draggedId = '';
     let dropHint = { mode: null, targetId: null };
@@ -82,6 +87,7 @@
     let historyPast = [];
     let historyFuture = [];
     let lastPersistedSignature = '';
+    let treeCollapsed = new Set();
 
     document.addEventListener('DOMContentLoaded', () => {
       els = {
@@ -89,6 +95,7 @@
         status: document.getElementById('status'),
         source: document.getElementById('source'),
         tree: document.getElementById('tree'),
+        sourceViewBtn: document.getElementById('source-view-btn'),
         importBtn: document.getElementById('import-btn'),
         saveStateBtn: document.getElementById('save-state-btn'),
         syncNavBtn: document.getElementById('sync-nav-btn'),
@@ -131,6 +138,12 @@
         setStatus('Debug log copied.', 'info');
       });
 
+      sourceView = localStorage.getItem('page_tree_source_view') || 'list';
+      sourceCollapsed = new Set(JSON.parse(localStorage.getItem('page_tree_source_collapsed') || '[]'));
+      els.sourceViewBtn.addEventListener('click', toggleSourceView);
+      updateSourceViewButton();
+      treeCollapsed = new Set(JSON.parse(localStorage.getItem('page_tree_tree_collapsed') || '[]'));
+
       // Unified DnD handlers on the tree container (mouse-position detector).
       els.tree.addEventListener('dragover', onTreeDragOver);
       els.tree.addEventListener('drop', onTreeDrop);
@@ -147,6 +160,20 @@
       loadState();
       loadSource();
     });
+
+    function toggleSourceView() {
+      sourceView = sourceView === 'ascii' ? 'list' : 'ascii';
+      localStorage.setItem('page_tree_source_view', sourceView);
+      updateSourceViewButton();
+      renderSource();
+    }
+
+    function updateSourceViewButton() {
+      if (!els.sourceViewBtn) return;
+      els.sourceViewBtn.classList.toggle('active', sourceView === 'ascii');
+      // Show the view you can switch to.
+      els.sourceViewBtn.textContent = sourceView === 'ascii' ? '🗂 Explorer' : '🧾 ASCII';
+    }
 
     function deepClone(value) {
       return JSON.parse(JSON.stringify(value));
@@ -421,36 +448,126 @@
         els.source.textContent = '(no markdown files found)';
         return;
       }
-      els.source.appendChild(buildSourceList(sourceTree));
+      els.source.appendChild(sourceView === 'ascii' ? buildSourceAscii(sourceTree) : buildSourceList(sourceTree));
     }
 
-    function buildSourceList(nodes) {
+    function persistSourceCollapsed() {
+      localStorage.setItem('page_tree_source_collapsed', JSON.stringify(Array.from(sourceCollapsed)));
+    }
+
+    function toggleSourceDir(path) {
+      if (!path) return;
+      if (sourceCollapsed.has(path)) sourceCollapsed.delete(path);
+      else sourceCollapsed.add(path);
+      persistSourceCollapsed();
+      renderSource();
+    }
+
+    function buildSourceList(nodes, depth = 0) {
       const ul = document.createElement('ul');
+      ul.className = depth === 0 ? 'source-explorer' : 'source-children';
       for (const node of (nodes || [])) {
         const li = document.createElement('li');
-        li.className = 'node ' + (node.kind === 'dir' ? 'dir' : 'page');
-        const title = document.createElement('span');
-        title.className = 'node-title';
-        title.textContent = node.name || '(unnamed)';
-        li.appendChild(title);
+        li.className = 'source-item';
+        li.dataset.kind = node.kind || '';
+        li.dataset.path = node.path || '';
+
+        const row = document.createElement('div');
+        row.className = 'source-row ' + (node.kind === 'dir' ? 'kind-dir' : 'kind-file');
+        row.style.paddingLeft = `${8 + depth * 14}px`;
+        row.title = node.path ? `./${node.path}` : '';
+
+        const twist = document.createElement('span');
+        twist.className = 'source-twist';
+        const isDir = node.kind === 'dir';
+        const isCollapsed = isDir && node.path && sourceCollapsed.has(node.path);
+        twist.textContent = isDir ? (isCollapsed ? '▸' : '▾') : '';
+        row.appendChild(twist);
+
+        const icon = document.createElement('span');
+        icon.className = 'source-icon';
+        icon.textContent = isDir ? '📁' : '📄';
+        row.appendChild(icon);
+
+        const name = document.createElement('span');
+        name.className = 'source-name';
+        name.textContent = node.name || '(unnamed)';
+        row.appendChild(name);
+
+        li.appendChild(row);
 
         if (node.kind === 'file') {
-          const meta = document.createElement('span');
-          meta.className = 'node-meta';
-          meta.textContent = node.path ? `./${node.path}` : '';
-          li.appendChild(meta);
-          li.addEventListener('click', (e) => {
+          row.classList.add('clickable');
+          row.addEventListener('click', (e) => {
             e.stopPropagation();
             locateByFile(node.path || '');
           });
+        } else if (node.kind === 'dir') {
+          row.classList.add('clickable');
+          row.addEventListener('click', (e) => {
+            e.stopPropagation();
+            toggleSourceDir(node.path || '');
+          });
         }
 
-        if (Array.isArray(node.children) && node.children.length) {
-          li.appendChild(buildSourceList(node.children));
+        if (node.kind === 'dir' && Array.isArray(node.children) && node.children.length) {
+          const collapsed = node.path && sourceCollapsed.has(node.path);
+          if (!collapsed) {
+            li.appendChild(buildSourceList(node.children, depth + 1));
+          }
         }
         ul.appendChild(li);
       }
       return ul;
+    }
+
+    function buildSourceAscii(nodes) {
+      const container = document.createElement('div');
+      container.className = 'source-ascii';
+      const lines = [];
+
+      function walk(items, prefixParts) {
+        (items || []).forEach((node, index) => {
+          const isLast = index === items.length - 1;
+          const branch = isLast ? '└── ' : '├── ';
+          const prefix = (prefixParts || []).join('') + branch;
+
+          const line = document.createElement('div');
+          line.className = 'source-line';
+
+          const pre = document.createElement('span');
+          pre.className = 'source-prefix';
+          pre.textContent = prefix;
+          line.appendChild(pre);
+
+          const name = document.createElement('span');
+          name.className = 'source-name ' + (node.kind === 'dir' ? 'kind-dir' : 'kind-file');
+          const ext = node.kind === 'file' ? (String(node.name || '').split('.').pop() || '').toLowerCase() : '';
+          if (ext) name.dataset.ext = ext;
+          name.textContent = node.name || '(unnamed)';
+          line.appendChild(name);
+
+          if (node.kind === 'file' && node.path) {
+            line.classList.add('clickable');
+            line.addEventListener('click', (e) => {
+              e.stopPropagation();
+              locateByFile(node.path || '');
+            });
+          }
+
+          lines.push(line);
+
+          const nextPrefixParts = (prefixParts || []).slice();
+          nextPrefixParts.push(isLast ? '    ' : '│   ');
+          if (Array.isArray(node.children) && node.children.length) {
+            walk(node.children, nextPrefixParts);
+          }
+        });
+      }
+
+      walk(nodes || [], []);
+      lines.forEach(l => container.appendChild(l));
+      return container;
     }
 
     function locateByFile(file) {
@@ -476,7 +593,7 @@
       els.tree.innerHTML = '';
       dropLineEl = dropLineEl || document.createElement('div');
       dropLineEl.className = 'drop-line';
-      const list = buildTreeList(Array.isArray(stateTree) ? stateTree : [], true);
+      const list = buildTreeList(Array.isArray(stateTree) ? stateTree : [], true, 0);
       els.tree.appendChild(list);
       els.tree.appendChild(dropLineEl);
       hideDropLine();
@@ -488,12 +605,34 @@
       }
     }
 
-    function buildTreeList(nodes, isRoot = false) {
+    function persistTreeCollapsed() {
+      localStorage.setItem('page_tree_tree_collapsed', JSON.stringify(Array.from(treeCollapsed)));
+    }
+
+    function toggleTreeDir(id) {
+      if (!id) return;
+      if (treeCollapsed.has(id)) treeCollapsed.delete(id);
+      else treeCollapsed.add(id);
+      persistTreeCollapsed();
+      renderTree();
+    }
+
+    function displayTitleForNode(node) {
+      const title = String((node && node.title) || '').trim();
+      if (!title) return '(untitled)';
+      if (title.includes('/') || title.includes('\\')) {
+        const parts = title.replace(/\\/g, '/').split('/');
+        return parts[parts.length - 1] || title;
+      }
+      return title;
+    }
+
+    function buildTreeList(nodes, isRoot = false, depth = 0) {
       const ul = document.createElement('ul');
-      ul.className = isRoot ? 'tree-root' : 'tree-children';
+      ul.className = isRoot ? 'tree-root tree-explorer' : 'tree-children tree-explorer';
       for (const node of (nodes || [])) {
         const li = document.createElement('li');
-        li.className = 'node ' + (node.type === 'folder' ? 'dir' : 'page');
+        li.className = 'node tree-item ' + (node.type === 'folder' ? 'dir' : 'page');
         li.draggable = true;
         li.dataset.id = node.id || '';
         li.dataset.type = node.type || 'page';
@@ -504,22 +643,45 @@
         if (li.dataset.id === selectedId) li.classList.add('selected');
 
         const row = document.createElement('div');
-        row.className = 'row';
+        row.className = 'row tree-row ' + (node.type === 'folder' ? 'kind-dir' : 'kind-file');
+        row.style.paddingLeft = `${10 + depth * 14}px`;
         row.addEventListener('click', (e) => {
           e.stopPropagation();
           selectedId = li.dataset.id;
           renderTree();
         });
 
+        const twist = document.createElement('span');
+        twist.className = 'tree-twist';
+        const isFolder = node.type === 'folder';
+        const collapsed = isFolder && treeCollapsed.has(li.dataset.id);
+        twist.textContent = isFolder ? (collapsed ? '▸' : '▾') : '';
+        twist.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (isFolder) toggleTreeDir(li.dataset.id);
+        });
+        row.appendChild(twist);
+
+        const icon = document.createElement('span');
+        icon.className = 'tree-icon';
+        icon.textContent = isFolder ? '📚' : '📝';
+        row.appendChild(icon);
+
         const title = document.createElement('span');
         title.className = 'node-title';
-        title.textContent = node.title || '(untitled)';
+        title.textContent = displayTitleForNode(node);
+        if (isFolder) {
+          title.addEventListener('dblclick', (e) => {
+            e.stopPropagation();
+            toggleTreeDir(li.dataset.id);
+          });
+        }
         row.appendChild(title);
 
         const meta = document.createElement('span');
         meta.className = 'node-meta';
-        if (node.type === 'folder') meta.textContent = node.segment ? `dir:${node.segment}` : '';
-        else meta.textContent = node.file ? `./${node.file}` : '(no file)';
+        if (node.type === 'folder') meta.textContent = node.segment ? `${node.segment}` : '';
+        else meta.textContent = node.file ? `./${node.file}` : '';
         row.appendChild(meta);
 
         li.appendChild(row);
@@ -529,7 +691,16 @@
 
         if (node.type === 'folder') {
           const children = Array.isArray(node.children) ? node.children : [];
-          li.appendChild(buildTreeList(children, false));
+          const collapsed = treeCollapsed.has(li.dataset.id);
+          if (!collapsed) {
+            li.appendChild(buildTreeList(children, false, depth + 1));
+          } else {
+            // Keep an empty children container so folder still shows as a folder
+            // but without large nested blocks.
+            const emptyUl = document.createElement('ul');
+            emptyUl.className = 'tree-children tree-explorer is-collapsed';
+            li.appendChild(emptyUl);
+          }
         }
         ul.appendChild(li);
       }
@@ -833,7 +1004,7 @@
     }
 
     function createNode(type) {
-      const title = prompt(type === 'folder' ? 'Folder title:' : 'Page title:');
+      const title = prompt(type === 'folder' ? 'Section title:' : 'Page title:');
       if (!title || !title.trim()) return;
 
       withHistory('create', () => {

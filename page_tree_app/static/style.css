@@ -133,6 +133,106 @@ button:active { transform: translateY(1px); }
 
 ul { list-style: none; padding-left: 18px; margin: 0; }
 
+.source-explorer,
+.source-children {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.source-item {
+  margin: 0;
+}
+
+.source-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 26px;
+  padding-right: 10px;
+  border-radius: 8px;
+  user-select: none;
+}
+
+.source-row.clickable {
+  cursor: pointer;
+}
+
+.source-row.clickable:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.source-twist {
+  width: 16px;
+  text-align: center;
+  color: rgba(232, 238, 252, 0.55);
+  flex: 0 0 auto;
+}
+
+.source-icon {
+  width: 18px;
+  text-align: center;
+  opacity: 0.9;
+  flex: 0 0 auto;
+}
+
+.source-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(232, 238, 252, 0.88);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.source-row.kind-dir .source-name {
+  font-weight: 700;
+  color: rgba(232, 238, 252, 0.92);
+}
+
+.source-ascii {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  color: rgba(232, 238, 252, 0.82);
+}
+
+.source-line {
+  display: flex;
+  gap: 8px;
+  padding: 2px 6px;
+  border-radius: 8px;
+}
+
+.source-line.clickable {
+  cursor: pointer;
+}
+
+.source-line.clickable:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.source-prefix {
+  white-space: pre;
+  color: rgba(232, 238, 252, 0.5);
+  flex: 0 0 auto;
+}
+
+.source-name.kind-dir {
+  color: rgba(106, 169, 255, 0.95);
+  font-weight: 650;
+}
+
+.source-name.kind-file {
+  color: rgba(232, 238, 252, 0.86);
+}
+
+.source-name.kind-file[data-ext="pdf"] { color: rgba(255, 120, 120, 0.95); }
+.source-name.kind-file[data-ext="doc"] { color: rgba(255, 196, 120, 0.95); }
+.source-name.kind-file[data-ext="docx"] { color: rgba(255, 196, 120, 0.95); }
+.source-name.kind-file[data-ext="ppt"] { color: rgba(255, 196, 120, 0.95); }
+.source-name.kind-file[data-ext="pptx"] { color: rgba(255, 196, 120, 0.95); }
+
 .drop-line {
   position: absolute;
   left: 18px;
@@ -147,22 +247,78 @@ ul { list-style: none; padding-left: 18px; margin: 0; }
 }
 
 .node { margin: 6px 0; }
+#tree .tree-explorer .node { margin: 4px 0; }
+#tree .tree-root > .node { margin: 8px 0; }
 .row {
   position: relative;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 8px 10px;
+  height: 30px;
+  padding: 0 10px;
   border: 1px solid transparent;
+  border-radius: 10px;
+}
+
+.node.dir > .row { background: rgba(106, 169, 255, 0.045); }
+.node.page > .row { background: rgba(255, 255, 255, 0.035); }
+
+/* Doc tree: merge folder header + children into a single block */
+#tree .node.dir {
+  background: rgba(106, 169, 255, 0.038);
+  border: 1px solid rgba(232, 238, 252, 0.10);
+  border-radius: 14px;
+  padding: 6px;
+}
+
+#tree .node.dir > .row {
+  background: transparent;
+  border-radius: 10px;
+}
+
+#tree .node.dir > ul {
+  position: relative;
+  margin: 6px 0 0 26px;
+  padding: 6px 10px 6px 10px;
+  border-top: 1px solid rgba(232, 238, 252, 0.08);
+  background: linear-gradient(90deg, rgba(106, 169, 255, 0.04), rgba(255, 255, 255, 0.0) 55%);
   border-radius: 12px;
 }
 
-.node.dir > .row { background: rgba(106, 169, 255, 0.06); }
-.node.page > .row { background: rgba(255, 255, 255, 0.04); }
+#tree .node.dir > ul::before {
+  content: "";
+  position: absolute;
+  left: 8px;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  background: rgba(106, 169, 255, 0.22);
+  border-radius: 999px;
+  opacity: 0.9;
+  pointer-events: none;
+}
 
-.node-title { font-weight: 600; font-size: 13px; }
-.node-meta { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 55%; }
+.tree-row:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.tree-twist {
+  width: 16px;
+  text-align: center;
+  color: rgba(232, 238, 252, 0.55);
+  flex: 0 0 auto;
+}
+
+.tree-icon {
+  width: 18px;
+  text-align: center;
+  opacity: 0.9;
+  flex: 0 0 auto;
+}
+
+.node-title { font-weight: 650; font-size: 13px; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.node-meta { color: rgba(232, 238, 252, 0.55); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 50%; flex: 0 0 auto; }
 
 .node.selected > .row { border-color: rgba(106, 169, 255, 0.55); }
 .node.drop-before > .row::before {
@@ -190,25 +346,18 @@ ul { list-style: none; padding-left: 18px; margin: 0; }
 .node.drop-inside > .row { outline: 2px solid rgba(106, 169, 255, 0.4); }
 .node.drop-inside > ul { outline: 2px dashed rgba(106, 169, 255, 0.28); outline-offset: 6px; border-radius: 16px; }
 
-.node.dir > ul {
-  margin: 8px 0 8px 14px;
-  padding: 10px 10px 10px 10px;
-  border: 1px solid var(--border);
-  border-left: 2px solid rgba(106, 169, 255, 0.35);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.02);
+.tree-explorer {
+  list-style: none;
+  margin: 0;
+  padding: 0;
 }
 
-.node.dir > ul:empty {
-  min-height: 42px;
+#tree .tree-children {
+  margin: 0;
 }
 
-.node.dir > ul:empty::after {
-  content: "Drop here";
-  display: block;
-  color: rgba(232, 238, 252, 0.45);
-  font-size: 12px;
-  padding: 8px 10px;
+#tree .node.dir > ul.is-collapsed {
+  display: none;
 }
 
 .list-shell > ul { min-height: 44px; }

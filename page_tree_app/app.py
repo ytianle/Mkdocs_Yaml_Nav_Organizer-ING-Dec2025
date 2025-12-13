@@ -44,8 +44,24 @@ def _now_stamp() -> str:
 def _backup_file(path: Path) -> Path | None:
     if not path.exists():
         return None
-    backup_path = path.with_name(f"{path.name}.bak-{_now_stamp()}")
+    backup_dir = REPO_ROOT / "backups" / "mkdocs"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    backup_path = backup_dir / f"{path.name}.bak-{_now_stamp()}"
     copy2(path, backup_path)
+
+    # Keep only the most recent backups.
+    keep = 5
+    backups = sorted(
+        backup_dir.glob(f"{path.name}.bak-*"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    for old in backups[keep:]:
+        try:
+            old.unlink()
+        except OSError:
+            pass
+
     return backup_path
 
 
@@ -290,7 +306,12 @@ def _tree_to_mkdocs_nav(nodes: Iterable[Node]) -> CommentedSeq:
         if not node.file:
             nav.append(CommentedMap({title: None}))
             continue
-        nav.append(CommentedMap({title: node.file}))
+        title_out = title
+        # If the title has degraded into a path (common after auto-generated nav),
+        # restore a sensible display name by using the basename.
+        if title_out == node.file or "/" in title_out or "\\" in title_out:
+            title_out = Path(node.file).name
+        nav.append(CommentedMap({title_out: node.file}))
     return nav
 
 
