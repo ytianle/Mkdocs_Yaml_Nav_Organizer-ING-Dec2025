@@ -1,8 +1,11 @@
-site_name: Mock test
+site_name: MkDocs Nav Manager
 nav:
-- 是ds:
-  - '123232': []
-- Guide:
-  - dw: s da/dw.md
-  - s s: s da/q.md
-- sda: sda.md
+  - Home: index.md
+  - Section 1:
+      - Overview: section1/index.md
+      - Page 1: section1/page1.md
+      - Page 2: section1/page2.md
+  - Section 2:
+      - Overview: section2/index.md
+      - Page A: section2/page-a.md
+  - Section 3: section3/index.md
