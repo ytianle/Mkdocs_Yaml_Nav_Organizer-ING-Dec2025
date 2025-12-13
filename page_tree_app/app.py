@@ -477,6 +477,167 @@ def _create_missing_page(file_rel: str, title: str) -> None:
     path.write_text(f"# {title.strip() or 'Untitled'}\n", encoding="utf-8")
 
 
+def _safe_docs_path(rel: str) -> Path:
+    rel = _safe_rel_path(rel)
+    path = (DOCS_ROOT / rel).resolve()
+    docs = DOCS_ROOT.resolve()
+    if docs not in path.parents and path != docs:
+        raise ValueError("Path escapes docs root.")
+    return path
+
+
+@app.route("/api/delete_files", methods=["POST"])
+def api_delete_files():
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return _json_error("Expected a JSON object.", 400)
+    files = payload.get("files")
+    if not isinstance(files, list):
+        return _json_error("Expected `files` to be a JSON list.", 400)
+    delete_assets = bool(payload.get("delete_assets", False))
+
+    deleted: list[dict[str, str]] = []
+    errors: list[dict[str, str]] = []
+
+    for item in files:
+        if not isinstance(item, str) or not item.strip():
+            continue
+        rel = _safe_rel_path(item.strip())
+        try:
+            path = _safe_docs_path(rel)
+        except Exception as exc:
+            errors.append({"file": rel, "error": str(exc)})
+            continue
+
+        if path.exists() and path.is_file():
+            try:
+                path.unlink()
+                deleted.append({"kind": "file", "path": rel})
+            except Exception as exc:
+                errors.append({"file": rel, "error": str(exc)})
+
+        if delete_assets:
+            asset_dir = path.with_suffix("")
+            if asset_dir.exists() and asset_dir.is_dir():
+                try:
+                    for child in asset_dir.rglob("*"):
+                        if child.is_file():
+                            child.unlink()
+                    for d in sorted([p for p in asset_dir.rglob("*") if p.is_dir()], key=lambda p: len(p.parts), reverse=True):
+                        try:
+                            d.rmdir()
+                        except OSError:
+                            pass
+                    asset_dir.rmdir()
+                    deleted.append({"kind": "asset_dir", "path": asset_dir.relative_to(DOCS_ROOT).as_posix()})
+                except Exception as exc:
+                    errors.append({"file": rel, "error": f"asset_dir: {exc}"})
+
+    return jsonify({"status": "ok", "deleted": deleted, "errors": errors})
+
+
+def _unique_child_name(parent: Path, name: str) -> str:
+    base = re.sub(r"[/\\\\]+", "-", name).strip()
+    if not base:
+        base = "untitled"
+    candidate = base
+    i = 2
+    while (parent / candidate).exists():
+        candidate = f"{base}-{i}"
+        i += 1
+    return candidate
+
+
+@app.route("/api/create_section", methods=["POST"])
+def api_create_section():
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return _json_error("Expected a JSON object.", 400)
+    title = str(payload.get("title") or "").strip()
+    if not title:
+        return _json_error("Title is required.", 400)
+    parent_dir = str(payload.get("parent_dir") or "").strip().strip("/")
+    parent_path = DOCS_ROOT if not parent_dir else _safe_docs_path(parent_dir)
+    if parent_path.exists() and not parent_path.is_dir():
+        return _json_error("Parent path is not a directory.", 400)
+    parent_path.mkdir(parents=True, exist_ok=True)
+
+    desired = str(payload.get("segment") or "").strip()
+    if desired and ("/" in desired or "\\" in desired):
+        return _json_error("Invalid segment.", 400)
+    segment = _slugify(desired or title)
+    segment = _unique_child_name(parent_path, segment)
+    created = parent_path / segment
+    created.mkdir(parents=True, exist_ok=False)
+    rel = created.relative_to(DOCS_ROOT).as_posix()
+    return jsonify({"status": "ok", "segment": segment, "dir": rel})
+
+
+@app.route("/api/create_page", methods=["POST"])
+def api_create_page():
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return _json_error("Expected a JSON object.", 400)
+    title = str(payload.get("title") or "").strip()
+    if not title:
+        return _json_error("Title is required.", 400)
+    parent_dir = str(payload.get("parent_dir") or "").strip().strip("/")
+    parent_path = DOCS_ROOT if not parent_dir else _safe_docs_path(parent_dir)
+    if parent_path.exists() and not parent_path.is_dir():
+        return _json_error("Parent path is not a directory.", 400)
+    parent_path.mkdir(parents=True, exist_ok=True)
+
+    desired = str(payload.get("basename") or "").strip()
+    if desired and ("/" in desired or "\\" in desired):
+        return _json_error("Invalid filename.", 400)
+    base = desired or f"{_slugify(title)}.md"
+    if not base.lower().endswith(".md"):
+        base = f"{base}.md"
+    base = _unique_child_name(parent_path, base)
+    file_path = parent_path / base
+    file_path.write_text(f"# {title.strip() or 'Untitled'}\n", encoding="utf-8")
+    rel = file_path.relative_to(DOCS_ROOT).as_posix()
+    return jsonify({"status": "ok", "file": rel})
+
+
+@app.route("/api/delete_dirs", methods=["POST"])
+def api_delete_dirs():
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return _json_error("Expected a JSON object.", 400)
+    dirs = payload.get("dirs")
+    if not isinstance(dirs, list):
+        return _json_error("Expected `dirs` to be a JSON list.", 400)
+
+    deleted: list[dict[str, str]] = []
+    errors: list[dict[str, str]] = []
+
+    for item in dirs:
+        if not isinstance(item, str) or not item.strip():
+            continue
+        rel = _safe_rel_path(item.strip().strip("/"))
+        try:
+            path = _safe_docs_path(rel)
+        except Exception as exc:
+            errors.append({"dir": rel, "error": str(exc)})
+            continue
+
+        if not path.exists():
+            continue
+        if not path.is_dir():
+            errors.append({"dir": rel, "error": "Not a directory."})
+            continue
+        try:
+            path.rmdir()
+            deleted.append({"kind": "dir", "path": rel})
+        except OSError as exc:
+            errors.append({"dir": rel, "error": f"Not empty: {exc}"})
+        except Exception as exc:
+            errors.append({"dir": rel, "error": str(exc)})
+
+    return jsonify({"status": "ok", "deleted": deleted, "errors": errors})
+
+
 @app.route("/")
 def index() -> str:
     return render_template("index.html")

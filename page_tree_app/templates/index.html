@@ -4,72 +4,98 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Page Tree (MkDocs)</title>
+  <title>MkDocs Nav Manager</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 
 <body>
-	  <div class="shell">
+  <div class="shell">
 	    <header class="toolbar">
 	      <div class="title">
-	        <h1>Page Tree</h1>
+	        <h1>MkDocs Nav Manager</h1>
 	        <div id="meta" class="muted">Loading...</div>
+	      </div>
+	      <div class="inline-actions">
+	        <button id="toggle-tools" type="button" class="ghost" data-help="Toggle Tools panel">🛠</button>
+	        <button id="toggle-source" type="button" class="ghost" data-help="Toggle Source panel">🗂</button>
+	        <button id="toggle-tree" type="button" class="ghost" data-help="Toggle Doc Tree panel">📚</button>
+	        <button id="toggle-info" type="button" class="ghost" data-help="Toggle Info panel">ℹ️</button>
 	      </div>
 	    </header>
 
-	    <div id="tool-tooltip" class="tool-tooltip" hidden></div>
+    <div id="tool-tooltip" class="tool-tooltip" hidden></div>
 
-	    <div id="workspace" class="workspace">
-	      <section class="card panel dock-tools" id="panel-tools">
-	        <div class="card-head">
-	          <h2>🛠 Tools</h2>
-	          <span class="muted">Hover for hints</span>
-	        </div>
-	        <div class="list-shell tools-body tools-dock-body">
-	          <div class="tools-buttons">
-	            <button id="tool-undo" type="button" class="ghost" data-help="Undo last change">⏪ Undo</button>
-	            <button id="tool-redo" type="button" class="ghost" data-help="Redo last undone change">⏩ Redo</button>
-	            <button id="tool-reload" type="button" class="ghost" data-help="Reload tree from saved state (may discard edits)">↩️ Reload</button>
-	            <button id="tool-import" type="button" class="ghost" data-help="Import nav from mkdocs.yml (overwrites current tree)">📥 Import</button>
-	            <button id="tool-save" type="button" class="ghost" data-help="Save draft to .page_tree_state.json (does not change mkdocs.yml)">📝 Save Draft</button>
-	            <button id="tool-sync-nav" type="button" class="ghost" data-help="Write mkdocs.yml nav only (no file moves)">🔃 Sync Nav Only</button>
-	            <button id="tool-sync-files" type="button" class="ghost" data-help="Write mkdocs.yml and move files to match tree">🔄 Sync Files</button>
-	            <button id="tool-debug" type="button" class="ghost" data-help="Toggle debug window (DnD logs)">🧪 Debug</button>
-	          </div>
-	        </div>
-	      </section>
+    <div id="workspace" class="workspace">
+      <section class="card panel dock-tools" id="panel-tools">
+        <div class="card-head">
+          <h2>🛠 Tools</h2>
+          <span class="muted">Hover for hints</span>
+        </div>
+        <div class="list-shell tools-body tools-dock-body">
+          <div class="tools-group">
+            <div class="tools-title">🧩 Draft & History</div>
+            <div class="tools-buttons">
+              <button id="tool-undo" type="button" class="ghost" data-help="Undo last change">⏪ Undo</button>
+              <button id="tool-redo" type="button" class="ghost" data-help="Redo last undone change">⏩ Redo</button>
+              <button id="tool-save" type="button" class="ghost"
+                data-help="Save draft to .page_tree_state.json (does not change mkdocs.yml)">📝 Save Draft</button>
+              <button id="tool-reload" type="button" class="ghost"
+                data-help="Reload Doc Tree from .page_tree_state.json (may discard edits)">🔄 Reload Draft</button>
+            </div>
+          </div>
+
+          <div class="splitter splitter-v splitter-tools" id="split-tools" title="Drag to resize tools"></div>
+
+          <div class="tools-group">
+            <div class="tools-title">🚀 Main</div>
+            <div class="tools-buttons">
+              <button id="tool-import" type="button" class="ghost"
+                data-help="Rebuild Doc Tree from mkdocs.yml nav (overwrites current draft)">📥 Load mkdocs.yml</button>
+              <button id="tool-sync-nav" type="button" class="ghost"
+                data-help="Write mkdocs.yml nav only (no file moves)">🧭 Sync Nav Only</button>
+              <button id="tool-sync-files" type="button" class="ghost"
+                data-help="Write mkdocs.yml and move files to match Doc Tree">📦 Sync Files</button>
+              <button id="tool-debug" type="button" class="ghost" data-help="Toggle debug window (DnD logs)">🧪
+                Debug</button>
+            </div>
+          </div>
+        </div>
+      </section>
 
       <div class="main-grid">
         <section class="card panel" id="panel-source">
-	          <div class="card-head">
-	            <h2>Source</h2>
-	            <div class="inline-actions">
-	              <span class="muted">Click to locate in tree</span>
-	              <button id="source-view-btn" type="button" class="ghost" data-help="Toggle source view (Explorer / ASCII)">🧾 ASCII</button>
-	            </div>
-	          </div>
+          <div class="card-head">
+            <h2>Source</h2>
+            <div class="inline-actions">
+              <span class="muted">Click to locate in tree</span>
+              <button id="source-view-btn" type="button" class="ghost"
+                data-help="Toggle source view (Explorer / ASCII)">🧾 ASCII</button>
+            </div>
+          </div>
           <div id="source" class="list-shell">Loading...</div>
         </section>
 
         <div class="splitter splitter-v" id="split-main-left" title="Drag to resize"></div>
 
         <section class="card panel" id="panel-tree">
-	          <div class="card-head">
-	            <h2>📚 Doc Tree</h2>
-	            <div class="inline-actions">
-	              <div class="segmented" role="group" aria-label="Depth limit">
-	                <button type="button" class="ghost depth-btn" data-depth="1" data-help="Show 1 level">1</button>
-	                <button type="button" class="ghost depth-btn" data-depth="2" data-help="Show 2 levels">2</button>
-	                <button type="button" class="ghost depth-btn" data-depth="3" data-help="Show 3 levels">3</button>
-	                <button type="button" class="ghost depth-btn" data-depth="4" data-help="Show 4 levels">4</button>
-	                <button type="button" class="ghost depth-btn" data-depth="5" data-help="Show 5 levels">5</button>
-	                <button type="button" class="ghost depth-btn" data-depth="n" data-help="Show all levels">∞</button>
-	              </div>
-	              <button id="new-folder-btn" type="button" data-help="Create a new section under selection">➕📁 New Section</button>
-	              <button id="new-page-btn" type="button" data-help="Create a new page under selection">➕📄 New Page</button>
-	              <button id="delete-btn" type="button" data-help="Delete selected node (tree only)">🗑️ Delete</button>
-	            </div>
-	          </div>
+          <div class="card-head">
+            <h2>📚 Doc Tree</h2>
+            <div class="inline-actions">
+              <div class="segmented" role="group" aria-label="Depth limit">
+                <button type="button" class="ghost depth-btn" data-depth="1" data-help="Show 1 level">1</button>
+                <button type="button" class="ghost depth-btn" data-depth="2" data-help="Show 2 levels">2</button>
+                <button type="button" class="ghost depth-btn" data-depth="3" data-help="Show 3 levels">3</button>
+                <button type="button" class="ghost depth-btn" data-depth="4" data-help="Show 4 levels">4</button>
+                <button type="button" class="ghost depth-btn" data-depth="5" data-help="Show 5 levels">5</button>
+                <button type="button" class="ghost depth-btn" data-depth="n" data-help="Show all levels">∞</button>
+              </div>
+              <button id="new-folder-btn" type="button" data-help="Create a new section under selection">➕📁 New
+                Section</button>
+              <button id="new-page-btn" type="button" data-help="Create a new page under selection">➕📄 New
+                Page</button>
+              <button id="delete-btn" type="button" data-help="Delete selected node (tree only)">🗑️ Delete</button>
+            </div>
+          </div>
           <div id="tree" class="list-shell">Loading...</div>
         </section>
       </div>
@@ -77,25 +103,25 @@
       <div class="splitter splitter-h" id="split-bottom" title="Drag to resize"></div>
 
       <div class="bottom-stack debug-hidden" id="bottom-stack">
-	        <section class="card panel" id="panel-info">
-	          <div class="card-head">
-	            <h2>ℹ️ Info</h2>
-	            <span class="muted">Hover tools for hints</span>
-	          </div>
-	          <div class="list-shell info-body">
-	            <div id="status" class="status-box" data-type="info"></div>
-	            <div class="info-pills">
-	              <div id="info-meta-pill" class="info-pill" title=""></div>
-	              <div id="info-selection-pill" class="info-pill" title=""></div>
-	            </div>
-	            <details id="info-details" class="info-details">
-	              <summary class="info-summary">More</summary>
-	              <div id="info-meta" class="info-line"></div>
-	              <div id="info-selection" class="info-line"></div>
-	            </details>
-	            <div id="info-hover" class="info-hint" hidden></div>
-	          </div>
-	        </section>
+        <section class="card panel" id="panel-info">
+          <div class="card-head">
+            <h2>ℹ️ Info</h2>
+            <span class="muted">Hover tools for hints</span>
+          </div>
+          <div class="list-shell info-body">
+            <div id="status" class="status-box" data-type="info"></div>
+            <div class="info-pills">
+              <div id="info-meta-pill" class="info-pill" title=""></div>
+              <div id="info-selection-pill" class="info-pill" title=""></div>
+            </div>
+            <details id="info-details" class="info-details">
+              <summary class="info-summary">More</summary>
+              <div id="info-meta" class="info-line"></div>
+              <div id="info-selection" class="info-line"></div>
+            </details>
+            <div id="info-hover" class="info-hint" hidden></div>
+          </div>
+        </section>
 
         <div class="splitter splitter-h" id="split-info-debug" title="Drag to resize debug height"></div>
 
@@ -120,7 +146,11 @@
     let sourceView = 'list';
     let sourceCollapsed = new Set();
     let selectedId = '';
+    let selectedIds = new Set();
+    let selectionAnchorId = '';
+    let selectionParentKey = '';
     let draggedId = '';
+    let draggedIds = [];
     let dropHint = { mode: null, targetId: null };
     let dropLineEl = null;
     let debugEnabled = false;
@@ -128,21 +158,29 @@
     let lastDropHintSignature = '';
     let lastDragoverLogAt = 0;
     let historyPast = [];
-	    let historyFuture = [];
-	    let lastPersistedSignature = '';
-	    let treeCollapsed = new Set();
+    let historyFuture = [];
+    let lastPersistedSignature = '';
+    let treeCollapsed = new Set();
 	    let treeMaxLevel = 'n';
 	    let toolTipEl = null;
 	    let activeInlineEdit = null;
+	    let showTools = false;
+	    let showSource = false;
+	    let showTree = true;
+	    let showInfo = false;
 
     document.addEventListener('DOMContentLoaded', () => {
-      els = {
-        meta: document.getElementById('meta'),
-        status: document.getElementById('status'),
-        source: document.getElementById('source'),
-        tree: document.getElementById('tree'),
-        workspace: document.getElementById('workspace'),
-        bottomStack: document.getElementById('bottom-stack'),
+	      els = {
+	        meta: document.getElementById('meta'),
+	        status: document.getElementById('status'),
+	        source: document.getElementById('source'),
+	        tree: document.getElementById('tree'),
+	        workspace: document.getElementById('workspace'),
+	        panelTools: document.getElementById('panel-tools'),
+	        panelSource: document.getElementById('panel-source'),
+	        panelTree: document.getElementById('panel-tree'),
+	        panelInfo: document.getElementById('panel-info'),
+	        bottomStack: document.getElementById('bottom-stack'),
         infoMeta: document.getElementById('info-meta'),
         infoMetaPill: document.getElementById('info-meta-pill'),
         infoHover: document.getElementById('info-hover'),
@@ -150,9 +188,9 @@
         infoSelectionPill: document.getElementById('info-selection-pill'),
         infoDetails: document.getElementById('info-details'),
         sourceViewBtn: document.getElementById('source-view-btn'),
-	        newFolderBtn: document.getElementById('new-folder-btn'),
-	        newPageBtn: document.getElementById('new-page-btn'),
-	        deleteBtn: document.getElementById('delete-btn'),
+        newFolderBtn: document.getElementById('new-folder-btn'),
+        newPageBtn: document.getElementById('new-page-btn'),
+        deleteBtn: document.getElementById('delete-btn'),
         toolUndoBtn: document.getElementById('tool-undo'),
         toolRedoBtn: document.getElementById('tool-redo'),
         toolReloadBtn: document.getElementById('tool-reload'),
@@ -165,10 +203,15 @@
         debugLog: document.getElementById('debug-log'),
         debugClear: document.getElementById('debug-clear'),
         debugCopy: document.getElementById('debug-copy'),
-        splitMainLeft: document.getElementById('split-main-left'),
-        splitBottom: document.getElementById('split-bottom'),
-        splitInfoDebug: document.getElementById('split-info-debug'),
-      };
+	        splitMainLeft: document.getElementById('split-main-left'),
+	        splitBottom: document.getElementById('split-bottom'),
+	        splitInfoDebug: document.getElementById('split-info-debug'),
+	        splitTools: document.getElementById('split-tools'),
+	        toggleTools: document.getElementById('toggle-tools'),
+	        toggleSource: document.getElementById('toggle-source'),
+	        toggleTree: document.getElementById('toggle-tree'),
+	        toggleInfo: document.getElementById('toggle-info'),
+	      };
 
       els.toolImportBtn.addEventListener('click', importFromMkdocs);
       els.toolSaveBtn.addEventListener('click', saveTreeOnly);
@@ -177,7 +220,7 @@
 
       els.newFolderBtn.addEventListener('click', () => createNode('folder'));
       els.newPageBtn.addEventListener('click', () => createNode('page'));
-	      els.deleteBtn.addEventListener('click', deleteSelected);
+      els.deleteBtn.addEventListener('click', deleteSelected);
       els.toolUndoBtn.addEventListener('click', undo);
       els.toolRedoBtn.addEventListener('click', redo);
       els.toolReloadBtn.addEventListener('click', reloadFromDisk);
@@ -217,58 +260,117 @@
       if (els.debugPanel) els.debugPanel.hidden = true;
       updateDebugVisibility();
 
-      initSplitters();
-      bindToolHoverHints();
+	      initSplitters();
+	      bindToolHoverHints();
+
+	      // Default hidden: Tools/Source/Info (user can toggle).
+	      showTools = localStorage.getItem('page_tree_show_tools') === 'true';
+	      showSource = localStorage.getItem('page_tree_show_source') === 'true';
+	      showTree = localStorage.getItem('page_tree_show_tree') !== 'false';
+	      showInfo = localStorage.getItem('page_tree_show_info') === 'true';
+	      applyPanelVisibility();
+
+	      if (els.toggleTools) els.toggleTools.addEventListener('click', () => {
+	        showTools = !showTools;
+	        localStorage.setItem('page_tree_show_tools', String(showTools));
+	        applyPanelVisibility();
+	      });
+	      if (els.toggleSource) els.toggleSource.addEventListener('click', () => {
+	        showSource = !showSource;
+	        localStorage.setItem('page_tree_show_source', String(showSource));
+	        applyPanelVisibility();
+	      });
+	      if (els.toggleTree) els.toggleTree.addEventListener('click', () => {
+	        showTree = !showTree;
+	        localStorage.setItem('page_tree_show_tree', String(showTree));
+	        applyPanelVisibility();
+	      });
+	      if (els.toggleInfo) els.toggleInfo.addEventListener('click', () => {
+	        showInfo = !showInfo;
+	        localStorage.setItem('page_tree_show_info', String(showInfo));
+	        applyPanelVisibility();
+	      });
+
+	      window.addEventListener('keydown', (e) => {
+	        if (activeInlineEdit) return;
+	        if (e.key === 'Escape') {
+          clearSelection();
+        }
+      });
 
       loadMeta();
       loadState();
-      loadSource();
-    });
+	      loadSource();
+	    });
 
-	    function bindToolHoverHints() {
-	      toolTipEl = document.getElementById('tool-tooltip');
-	      const buttons = document.querySelectorAll('[data-help]');
-	      buttons.forEach(btn => {
-	        btn.addEventListener('mouseenter', (e) => {
-	          const text = btn.dataset.help || '';
-	          setInfoHover(text);
-	          showToolTip(text, e);
-	        });
-	        btn.addEventListener('mousemove', (e) => {
-	          moveToolTip(e);
-	        });
-	        btn.addEventListener('mouseleave', () => {
-	          setInfoHover('');
-	          hideToolTip();
-	        });
-	      });
+	    function applyPanelVisibility() {
+	      if (els.panelTools) els.panelTools.hidden = !showTools;
+	      if (els.panelSource) els.panelSource.hidden = !showSource;
+	      if (els.panelTree) els.panelTree.hidden = !showTree;
+	      if (els.panelInfo) els.panelInfo.hidden = !showInfo;
+	      if (els.splitMainLeft) els.splitMainLeft.style.display = (showSource && showTree) ? '' : 'none';
+	      if (els.splitBottom) els.splitBottom.style.display = showInfo ? '' : 'none';
+	      if (els.bottomStack) els.bottomStack.hidden = !showInfo;
+
+	      if (els.workspace) {
+	        els.workspace.classList.toggle('no-tools', !showTools);
+	        els.workspace.classList.toggle('no-source', !showSource);
+	        els.workspace.classList.toggle('no-tree', !showTree);
+	        els.workspace.classList.toggle('no-bottom', !showInfo);
+	        const singleMain = (showSource ? 1 : 0) + (showTree ? 1 : 0) === 1;
+	        els.workspace.classList.toggle('single-main', singleMain);
+	      }
+
+	      if (els.toggleTools) els.toggleTools.classList.toggle('active', showTools);
+	      if (els.toggleSource) els.toggleSource.classList.toggle('active', showSource);
+	      if (els.toggleTree) els.toggleTree.classList.toggle('active', showTree);
+	      if (els.toggleInfo) els.toggleInfo.classList.toggle('active', showInfo);
 	    }
 
-	    function showToolTip(text, e) {
-	      if (!toolTipEl) return;
-	      const value = (text || '').trim();
-	      if (!value) return;
-	      toolTipEl.textContent = value;
-	      toolTipEl.hidden = false;
-	      moveToolTip(e);
-	    }
+    function bindToolHoverHints() {
+      toolTipEl = document.getElementById('tool-tooltip');
+      const buttons = document.querySelectorAll('[data-help]');
+      buttons.forEach(btn => {
+        btn.addEventListener('mouseenter', (e) => {
+          const text = btn.dataset.help || '';
+          setInfoHover(text);
+          showToolTip(text, e);
+        });
+        btn.addEventListener('mousemove', (e) => {
+          moveToolTip(e);
+        });
+        btn.addEventListener('mouseleave', () => {
+          setInfoHover('');
+          hideToolTip();
+        });
+      });
+    }
 
-	    function moveToolTip(e) {
-	      if (!toolTipEl || toolTipEl.hidden) return;
-	      const pad = 12;
-	      const maxLeft = window.innerWidth - toolTipEl.offsetWidth - pad;
-	      const maxTop = window.innerHeight - toolTipEl.offsetHeight - pad;
-	      const left = Math.min(e.clientX + pad, Math.max(pad, maxLeft));
-	      const top = Math.min(e.clientY + pad, Math.max(pad, maxTop));
-	      toolTipEl.style.left = `${left}px`;
-	      toolTipEl.style.top = `${top}px`;
-	    }
+    function showToolTip(text, e) {
+      if (!toolTipEl) return;
+      const value = (text || '').trim();
+      if (!value) return;
+      toolTipEl.textContent = value;
+      toolTipEl.hidden = false;
+      moveToolTip(e);
+    }
 
-	    function hideToolTip() {
-	      if (!toolTipEl) return;
-	      toolTipEl.hidden = true;
-	      toolTipEl.textContent = '';
-	    }
+    function moveToolTip(e) {
+      if (!toolTipEl || toolTipEl.hidden) return;
+      const pad = 12;
+      const maxLeft = window.innerWidth - toolTipEl.offsetWidth - pad;
+      const maxTop = window.innerHeight - toolTipEl.offsetHeight - pad;
+      const left = Math.min(e.clientX + pad, Math.max(pad, maxLeft));
+      const top = Math.min(e.clientY + pad, Math.max(pad, maxTop));
+      toolTipEl.style.left = `${left}px`;
+      toolTipEl.style.top = `${top}px`;
+    }
+
+    function hideToolTip() {
+      if (!toolTipEl) return;
+      toolTipEl.hidden = true;
+      toolTipEl.textContent = '';
+    }
 
     function toggleSourceView() {
       sourceView = sourceView === 'ascii' ? 'list' : 'ascii';
@@ -449,13 +551,14 @@
       }
     }
 
-	    function initSplitters() {
-	      if (!els.workspace) return;
+    function initSplitters() {
+      if (!els.workspace) return;
 
       const defaults = {
         left: 360,
         bottom: 180,
         debug: 180,
+        toolsLeft: 520,
       };
 
       const readNum = (key, fallback) => {
@@ -468,34 +571,41 @@
       const left = clampNum(readNum('page_tree_layout_left', defaults.left), 240, 820);
       const bottom = clampNum(readNum('page_tree_layout_bottom', defaults.bottom), 120, 360);
       const debugHeight = clampNum(readNum('page_tree_layout_debug', defaults.debug), 120, 360);
+      const toolsLeft = clampNum(readNum('page_tree_layout_tools_left', defaults.toolsLeft), 320, 920);
 
       els.workspace.style.setProperty('--left-width', `${left}px`);
       els.workspace.style.setProperty('--bottom-height', `${bottom}px`);
       els.workspace.style.setProperty('--debug-height', `${debugHeight}px`);
+      els.workspace.style.setProperty('--tools-left-width', `${toolsLeft}px`);
 
-	      const clamp = (v, min, max) => Math.min(Math.max(v, min), max);
-	      let drag = null;
+      const clamp = (v, min, max) => Math.min(Math.max(v, min), max);
+      let drag = null;
 
-	      const onMove = (e) => {
-	        if (!drag) return;
-	        const x = e.clientX;
-	        const y = e.clientY;
+      const onMove = (e) => {
+        if (!drag) return;
+        const x = e.clientX;
+        const y = e.clientY;
 
-	        if (drag.kind === 'left') {
-	          const width = clamp(x - drag.rect.left, 240, drag.max);
-	          els.workspace.style.setProperty('--left-width', `${width}px`);
-	          return;
-	        }
-	        if (drag.kind === 'bottom') {
-	          const height = clamp(drag.bottom - y, 120, drag.max);
-	          els.workspace.style.setProperty('--bottom-height', `${height}px`);
-	          return;
-	        }
-	        if (drag.kind === 'debug') {
-	          const height = clamp(drag.bottom - y, 120, drag.max);
-	          els.workspace.style.setProperty('--debug-height', `${height}px`);
-	        }
-	      };
+        if (drag.kind === 'left') {
+          const width = clamp(x - drag.rect.left, 240, drag.max);
+          els.workspace.style.setProperty('--left-width', `${width}px`);
+          return;
+        }
+        if (drag.kind === 'bottom') {
+          const height = clamp(drag.bottom - y, 120, drag.max);
+          els.workspace.style.setProperty('--bottom-height', `${height}px`);
+          return;
+        }
+        if (drag.kind === 'debug') {
+          const height = clamp(drag.bottom - y, 120, drag.max);
+          els.workspace.style.setProperty('--debug-height', `${height}px`);
+          return;
+        }
+        if (drag.kind === 'tools') {
+          const width = clamp(x - drag.left, 320, drag.max);
+          els.workspace.style.setProperty('--tools-left-width', `${width}px`);
+        }
+      };
 
       const onUp = () => {
         if (!drag) return;
@@ -503,34 +613,40 @@
         localStorage.setItem('page_tree_layout_left', parseFloat(style.getPropertyValue('--left-width')) || defaults.left);
         localStorage.setItem('page_tree_layout_bottom', parseFloat(style.getPropertyValue('--bottom-height')) || defaults.bottom);
         localStorage.setItem('page_tree_layout_debug', parseFloat(style.getPropertyValue('--debug-height')) || defaults.debug);
+        localStorage.setItem('page_tree_layout_tools_left', parseFloat(style.getPropertyValue('--tools-left-width')) || defaults.toolsLeft);
         drag = null;
         document.body.classList.remove('is-resizing');
         window.removeEventListener('pointermove', onMove);
         window.removeEventListener('pointerup', onUp);
       };
 
-	      const start = (kind) => (e) => {
-	        e.preventDefault();
-	        if (kind === 'left') {
-	          const rect = els.workspace.querySelector('.main-grid').getBoundingClientRect();
-	          drag = { kind, rect, max: Math.max(240, rect.width - 520) };
-	        } else if (kind === 'bottom') {
-	          const rect = els.workspace.getBoundingClientRect();
-	          drag = { kind, bottom: rect.bottom, max: Math.max(120, rect.height - 320) };
-	        } else if (kind === 'debug') {
-	          const rect = els.bottomStack.getBoundingClientRect();
-	          drag = { kind, bottom: rect.bottom, max: Math.max(120, rect.height - 120) };
-	        } else {
-	          drag = { kind };
-	        }
-	        document.body.classList.add('is-resizing');
-	        window.addEventListener('pointermove', onMove);
-	        window.addEventListener('pointerup', onUp);
-	      };
+      const start = (kind) => (e) => {
+        e.preventDefault();
+        if (kind === 'left') {
+          const rect = els.workspace.querySelector('.main-grid').getBoundingClientRect();
+          drag = { kind, rect, max: Math.max(240, rect.width - 520) };
+        } else if (kind === 'bottom') {
+          const rect = els.workspace.getBoundingClientRect();
+          drag = { kind, bottom: rect.bottom, max: Math.max(120, rect.height - 320) };
+        } else if (kind === 'debug') {
+          const rect = els.bottomStack.getBoundingClientRect();
+          drag = { kind, bottom: rect.bottom, max: Math.max(120, rect.height - 120) };
+        } else if (kind === 'tools') {
+          const panel = document.getElementById('panel-tools');
+          const rect = panel ? panel.getBoundingClientRect() : els.workspace.getBoundingClientRect();
+          drag = { kind, left: rect.left, max: Math.max(320, rect.width - 360) };
+        } else {
+          drag = { kind };
+        }
+        document.body.classList.add('is-resizing');
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+      };
 
       if (els.splitMainLeft) els.splitMainLeft.addEventListener('pointerdown', start('left'));
       if (els.splitBottom) els.splitBottom.addEventListener('pointerdown', start('bottom'));
       if (els.splitInfoDebug) els.splitInfoDebug.addEventListener('pointerdown', start('debug'));
+      if (els.splitTools) els.splitTools.addEventListener('pointerdown', start('tools'));
     }
 
     async function fetchJson(url, options) {
@@ -602,23 +718,32 @@
     }
 
     function ensureSelectedValid() {
-      if (!selectedId) return;
-      const found = findNode(stateTree, selectedId);
-      if (!found) selectedId = '';
+      if (selectedIds && selectedIds.size) {
+        const next = new Set();
+        for (const id of selectedIds) {
+          if (findNode(stateTree, id)) next.add(id);
+        }
+        selectedIds = next;
+      }
+      if (selectedId && !findNode(stateTree, selectedId)) selectedId = '';
+      if (selectedId && selectedIds && selectedIds.size && !selectedIds.has(selectedId)) {
+        selectedId = Array.from(selectedIds)[0] || '';
+      }
+      if (!selectedId && selectedIds && selectedIds.size) selectedId = Array.from(selectedIds)[0] || '';
     }
 
-	    async function loadMeta() {
-	      try {
-	        const data = await fetchJson('/api/meta');
-	        const text = `${data.mkdocs_path} | ${data.docs_root}`;
-	        els.meta.textContent = shortenPathLine(text);
-	        els.meta.title = text;
-	        setInfoMeta(text);
-	      } catch (e) {
-	        els.meta.textContent = '(meta unavailable)';
-	        setInfoMeta('(meta unavailable)');
-	      }
-	    }
+    async function loadMeta() {
+      try {
+        const data = await fetchJson('/api/meta');
+        const text = `${data.mkdocs_path} | ${data.docs_root}`;
+        els.meta.textContent = shortenPathLine(text);
+        els.meta.title = text;
+        setInfoMeta(text);
+      } catch (e) {
+        els.meta.textContent = '(meta unavailable)';
+        setInfoMeta('(meta unavailable)');
+      }
+    }
 
     async function loadState(options) {
       const reset = options && options.reset;
@@ -665,20 +790,20 @@
       }
     }
 
-	    async function saveTreeOnly() {
-	      setStatus('Saving tree...', 'info');
-	      try {
-	        await fetchJson('/api/state', {
-	          method: 'POST',
-	          headers: { 'Content-Type': 'application/json' },
-	          body: JSON.stringify({ tree: stateTree })
-	        });
-	        lastPersistedSignature = treeSignature(stateTree);
-	        setStatus('Draft saved.', 'success');
-	      } catch (e) {
-	        setStatus(e.message || 'Save failed.', 'error');
-	      }
-	    }
+    async function saveTreeOnly() {
+      setStatus('Saving tree...', 'info');
+      try {
+        await fetchJson('/api/state', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tree: stateTree })
+        });
+        lastPersistedSignature = treeSignature(stateTree);
+        setStatus('Draft saved.', 'success');
+      } catch (e) {
+        setStatus(e.message || 'Save failed.', 'error');
+      }
+    }
 
     async function sync(mode) {
       const msg = mode === 'sync_files'
@@ -735,9 +860,9 @@
         li.dataset.kind = node.kind || '';
         li.dataset.path = node.path || '';
 
-        const row = document.createElement('div');
-        row.className = 'source-row ' + (node.kind === 'dir' ? 'kind-dir' : 'kind-file');
-        row.style.paddingLeft = `${8 + depth * 14}px`;
+	        const row = document.createElement('div');
+	        row.className = 'source-row ' + (node.kind === 'dir' ? 'kind-dir' : 'kind-file');
+	        row.style.paddingLeft = `${8 + depth * 10}px`;
         row.title = node.path ? `./${node.path}` : '';
 
         const twist = document.createElement('span');
@@ -869,11 +994,15 @@
       }
     }
 
-	    function updateSelectionInfo() {
-	      if (!selectedId) {
-	        setInfoSelection('Selection: (none)');
-	        return;
-	      }
+    function updateSelectionInfo() {
+      if (selectedIds && selectedIds.size > 1) {
+        setInfoSelection(`Selection: ${selectedIds.size} items`);
+        return;
+      }
+      if (!selectedId) {
+        setInfoSelection('Selection: (none)');
+        return;
+      }
       const found = findNode(stateTree, selectedId);
       if (!found) {
         setInfoSelection('Selection: (none)');
@@ -882,19 +1011,119 @@
       const kind = found.node.type === 'folder' ? 'section' : 'page';
       const file = found.node.file ? ` | file: ./${found.node.file}` : '';
       const segment = found.node.segment ? ` | dir: ${found.node.segment}` : '';
-	      setInfoSelection(`Selection: ${kind} | ${found.node.title}${segment}${file}`);
-	    }
+      setInfoSelection(`Selection: ${kind} | ${found.node.title}${segment}${file}`);
+    }
 
-	    function selectNode(id) {
-	      selectedId = id || '';
-	      const prev = document.querySelector('#tree li.node.selected');
-	      if (prev) prev.classList.remove('selected');
-	      if (selectedId) {
-	        const next = document.querySelector(`#tree li.node[data-id="${CSS.escape(selectedId)}"]`);
-	        if (next) next.classList.add('selected');
-	      }
-	      updateSelectionInfo();
-	    }
+    function selectNode(id) {
+      selectedId = id || '';
+      selectedIds = new Set(selectedId ? [selectedId] : []);
+      selectionAnchorId = selectedId;
+      selectionParentKey = selectionKeyForId(selectedId);
+      syncSelectionClasses();
+    }
+
+    function clearSelection() {
+      selectedId = '';
+      selectedIds = new Set();
+      selectionAnchorId = '';
+      selectionParentKey = '';
+      syncSelectionClasses();
+    }
+
+    function selectionKeyForId(id) {
+      if (!id) return '';
+      const info = findNode(stateTree, id);
+      if (!info) return '';
+      return info.parent ? `p:${info.parent.id}` : 'root';
+    }
+
+    function syncSelectionClasses() {
+      document.querySelectorAll('#tree li.node.selected').forEach(el => el.classList.remove('selected'));
+      for (const id of (selectedIds || [])) {
+        const el = document.querySelector(`#tree li.node[data-id="${CSS.escape(id)}"]`);
+        if (el) el.classList.add('selected');
+      }
+      updateSelectionInfo();
+    }
+
+    function selectWithModifiers(id, e) {
+      const isMeta = !!(e && (e.metaKey || e.ctrlKey));
+      const isShift = !!(e && e.shiftKey);
+      const key = selectionKeyForId(id);
+      if (!id) return;
+
+      // First selection.
+      if (!selectedIds || selectedIds.size === 0) {
+        selectedId = id;
+        selectedIds = new Set([id]);
+        selectionAnchorId = id;
+        selectionParentKey = key;
+        syncSelectionClasses();
+        return;
+      }
+
+      // Restrict multi-select to the same parent (same siblings list).
+      if (selectionParentKey && key && selectionParentKey !== key) {
+        selectedId = id;
+        selectedIds = new Set([id]);
+        selectionAnchorId = id;
+        selectionParentKey = key;
+        syncSelectionClasses();
+        return;
+      }
+
+      if (isShift && selectionAnchorId) {
+        const anchorInfo = findNode(stateTree, selectionAnchorId);
+        const targetInfo = findNode(stateTree, id);
+        if (!anchorInfo || !targetInfo) return;
+        const sameParent = (anchorInfo.parent ? anchorInfo.parent.id : 'root') === (targetInfo.parent ? targetInfo.parent.id : 'root');
+        if (!sameParent) {
+          selectedId = id;
+          selectedIds = new Set([id]);
+          selectionAnchorId = id;
+          selectionParentKey = key;
+          syncSelectionClasses();
+          return;
+        }
+        const siblings = anchorInfo.siblings || [];
+        const a = siblings.findIndex(n => n.id === selectionAnchorId);
+        const b = siblings.findIndex(n => n.id === id);
+        if (a < 0 || b < 0) return;
+        const lo = Math.min(a, b);
+        const hi = Math.max(a, b);
+        const next = new Set();
+        for (let i = lo; i <= hi; i++) next.add(siblings[i].id);
+        selectedIds = next;
+        selectedId = id;
+        selectionParentKey = key;
+        syncSelectionClasses();
+        return;
+      }
+
+      if (isMeta) {
+        const next = new Set(selectedIds || []);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        selectedIds = next;
+        selectedId = id;
+        selectionAnchorId = id;
+        selectionParentKey = key;
+        if (!selectedIds.size) {
+          selectedId = '';
+          selectionAnchorId = '';
+          selectionParentKey = '';
+        }
+        syncSelectionClasses();
+        return;
+      }
+
+      // Plain click: single select.
+      selectedId = id;
+      selectedIds = new Set([id]);
+      selectionAnchorId = id;
+      selectionParentKey = key;
+      syncSelectionClasses();
+    }
 
     function persistTreeCollapsed() {
       localStorage.setItem('page_tree_tree_collapsed', JSON.stringify(Array.from(treeCollapsed)));
@@ -918,7 +1147,7 @@
       return title;
     }
 
-	    function buildTreeList(nodes, isRoot = false, depth = 0) {
+    function buildTreeList(nodes, isRoot = false, depth = 0) {
       const ul = document.createElement('ul');
       ul.className = isRoot ? 'tree-root tree-explorer' : 'tree-children tree-explorer';
       for (const node of (nodes || [])) {
@@ -931,15 +1160,16 @@
         li.dataset.segment = node.segment || '';
         li.dataset.file = node.file || '';
 
-        if (li.dataset.id === selectedId) li.classList.add('selected');
+        if ((selectedIds && selectedIds.has(li.dataset.id)) || li.dataset.id === selectedId) li.classList.add('selected');
 
-	        const row = document.createElement('div');
-	        row.className = 'row tree-row ' + (node.type === 'folder' ? 'kind-dir' : 'kind-file');
-	        row.style.paddingLeft = `${10 + depth * 14}px`;
-	        row.addEventListener('click', (e) => {
-	          e.stopPropagation();
-	          selectNode(li.dataset.id);
-	        });
+		        const row = document.createElement('div');
+		        row.className = 'row tree-row ' + (node.type === 'folder' ? 'kind-dir' : 'kind-file');
+		        row.style.paddingLeft = `${10 + depth * 10}px`;
+		        row.addEventListener('click', (e) => {
+		          e.stopPropagation();
+		          if (activeInlineEdit) return;
+		          selectWithModifiers(li.dataset.id, e);
+		        });
 
         const twist = document.createElement('span');
         twist.className = 'tree-twist';
@@ -964,38 +1194,38 @@
         icon.textContent = isFolder ? '📚' : '📝';
         row.appendChild(icon);
 
-	        const title = document.createElement('span');
-	        title.className = 'node-title';
-	        title.textContent = displayTitleForNode(node);
-	        title.addEventListener('dblclick', (e) => {
-	          e.stopPropagation();
-	          selectedId = li.dataset.id;
-	          beginInlineEdit(li.dataset.id, 'title', title);
-	        });
-	        row.appendChild(title);
+        const title = document.createElement('span');
+        title.className = 'node-title';
+        title.textContent = displayTitleForNode(node);
+        title.addEventListener('dblclick', (e) => {
+          e.stopPropagation();
+          selectedId = li.dataset.id;
+          beginInlineEdit(li.dataset.id, 'title', title);
+        });
+        row.appendChild(title);
 
-	        // Pages show file location; folders don't need to show "path/meta".
-	        const meta = document.createElement('span');
-	        meta.className = 'node-meta';
-	        if (isFolder) {
-	          meta.textContent = node.segment ? `${node.segment}` : '';
-	          meta.addEventListener('dblclick', (e) => {
-	            e.stopPropagation();
-	            selectedId = li.dataset.id;
-	            beginInlineEdit(li.dataset.id, 'segment', meta);
-	          });
-	          row.appendChild(meta);
-	        } else {
-	          meta.textContent = node.file ? `./${node.file}` : '';
-	          meta.addEventListener('dblclick', (e) => {
-	            e.stopPropagation();
-	            selectedId = li.dataset.id;
-	            beginInlineEdit(li.dataset.id, 'file', meta);
-	          });
-	          row.appendChild(meta);
-	        }
+        // Pages show file location; folders don't need to show "path/meta".
+        const meta = document.createElement('span');
+        meta.className = 'node-meta';
+        if (isFolder) {
+          meta.textContent = folderDirForId(li.dataset.id) || (node.segment ? `${node.segment}` : '');
+          meta.addEventListener('dblclick', (e) => {
+            e.stopPropagation();
+            selectedId = li.dataset.id;
+            beginInlineEdit(li.dataset.id, 'segment', meta);
+          });
+          row.appendChild(meta);
+        } else {
+          meta.textContent = node.file ? `./${node.file}` : '';
+          meta.addEventListener('dblclick', (e) => {
+            e.stopPropagation();
+            selectedId = li.dataset.id;
+            beginInlineEdit(li.dataset.id, 'file', meta);
+          });
+          row.appendChild(meta);
+        }
 
-	        li.appendChild(row);
+        li.appendChild(row);
 
         li.addEventListener('dragstart', onDragStart);
         li.addEventListener('dragend', onDragEnd);
@@ -1018,29 +1248,37 @@
       return ul;
     }
 
-	    function onDragStart(e) {
-	      // dragstart bubbles: prevent parent <li> handlers from overwriting draggedId
-	      e.stopPropagation();
-	      if (activeInlineEdit) {
-	        e.preventDefault();
-	        return;
-	      }
-	      if (e.currentTarget && e.currentTarget.classList && e.currentTarget.classList.contains('is-editing')) {
-	        e.preventDefault();
-	        return;
-	      }
-	      draggedId = e.currentTarget.dataset.id || '';
-	      e.dataTransfer.effectAllowed = 'move';
-	      e.dataTransfer.setData('text/plain', draggedId);
-	      e.currentTarget.classList.add('dragging');
-	      pushDebug('drag.start', { draggedId, type: e.currentTarget.dataset.type || '', title: e.currentTarget.dataset.title || '' });
-	    }
+    function onDragStart(e) {
+      // dragstart bubbles: prevent parent <li> handlers from overwriting draggedId
+      e.stopPropagation();
+      if (activeInlineEdit) {
+        e.preventDefault();
+        return;
+      }
+      if (e.currentTarget && e.currentTarget.classList && e.currentTarget.classList.contains('is-editing')) {
+        e.preventDefault();
+        return;
+      }
+      const id = e.currentTarget.dataset.id || '';
+      if (selectedIds && selectedIds.size > 1 && selectedIds.has(id)) {
+        draggedIds = Array.from(selectedIds);
+      } else {
+        draggedIds = id ? [id] : [];
+        if (id && (!selectedIds || !selectedIds.has(id))) selectNode(id);
+      }
+      draggedId = draggedIds[0] || id || '';
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', draggedId);
+      e.currentTarget.classList.add('dragging');
+      pushDebug('drag.start', { draggedId, draggedIds, type: e.currentTarget.dataset.type || '', title: e.currentTarget.dataset.title || '' });
+    }
 
     function onDragEnd(e) {
       // dragend bubbles too; keep state consistent
       e.stopPropagation();
       if (e && e.currentTarget) e.currentTarget.classList.remove('dragging');
       draggedId = '';
+      draggedIds = [];
       clearDropVisual();
       pushDebug('drag.end', {});
     }
@@ -1126,7 +1364,7 @@
     }
 
     function logDropHint(mode, targetId) {
-      const sig = `${mode}::${targetId}::${draggedId}`;
+      const sig = `${mode}::${targetId}::${draggedId}::${(draggedIds || []).join(',')}`;
       const now = Date.now();
       if (sig === lastDropHintSignature && now - lastDragoverLogAt < 120) return;
       lastDropHintSignature = sig;
@@ -1134,6 +1372,7 @@
       const target = targetId ? findNode(stateTree, targetId) : null;
       pushDebug('drag.over', {
         draggedId,
+        draggedIds,
         mode,
         targetId,
         targetTitle: target ? target.node.title : null,
@@ -1146,14 +1385,17 @@
       if (!mode) return;
 
       // Never allow moving into/self/descendant; treat as no-op (keeps detector free).
-      const descendant = targetId ? isDescendant(draggedId, targetId) : false;
-      if (targetId && (targetId === draggedId || descendant)) {
+      const ids = (draggedIds && draggedIds.length) ? draggedIds : (draggedId ? [draggedId] : []);
+      const descendant = targetId ? ids.some(id => isDescendant(id, targetId)) : false;
+      const selfHit = targetId ? ids.includes(targetId) : false;
+      if (targetId && (selfHit || descendant)) {
         const dragged = findNode(stateTree, draggedId);
         const target = findNode(stateTree, targetId);
         pushDebug('drop.noop', {
-          reason: targetId === draggedId ? 'self' : 'target_is_descendant',
+          reason: selfHit ? 'self_or_group' : 'target_is_descendant',
           mode,
           draggedId,
+          draggedIds: ids,
           draggedTitle: dragged ? dragged.node.title : null,
           draggedPath: nodePath(draggedId),
           targetId,
@@ -1166,20 +1408,55 @@
 
       if (mode === 'root') {
         pushDebug('drop.apply', { mode, targetId: '' });
-        withHistory('drop.root', () => moveNodeToRoot(draggedId));
+        withHistory('drop.root', () => moveNodes(ids, '', 'root'));
         setStatus('Moved.', 'success');
         return;
       }
       if (mode === 'inside') {
         pushDebug('drop.apply', { mode, targetId });
-        withHistory('drop.inside', () => moveIntoFolder(draggedId, targetId));
+        withHistory('drop.inside', () => moveNodes(ids, targetId, 'inside'));
         setStatus('Moved.', 'success');
         return;
       }
       if (mode === 'before' || mode === 'after') {
         pushDebug('drop.apply', { mode, targetId });
-        withHistory(`drop.${mode}`, () => moveNode(draggedId, targetId, mode));
+        withHistory(`drop.${mode}`, () => moveNodes(ids, targetId, mode));
         setStatus('Moved.', 'success');
+      }
+    }
+
+    function moveNodes(ids, targetId, mode) {
+      const list = Array.from(new Set((ids || []).filter(Boolean)));
+      if (!list.length) return;
+
+      if (mode === 'root') {
+        const ctxs = detachManyWithContext(list);
+        for (const ctx of ctxs) stateTree.push(ctx.node);
+        return;
+      }
+
+      if (mode === 'inside') {
+        const targetInfo = findNode(stateTree, targetId);
+        if (!targetInfo || targetInfo.node.type !== 'folder') return;
+        targetInfo.node.children = Array.isArray(targetInfo.node.children) ? targetInfo.node.children : [];
+        const ctxs = detachManyWithContext(list);
+        for (const ctx of ctxs) targetInfo.node.children.push(ctx.node);
+        return;
+      }
+
+      if (mode === 'before' || mode === 'after') {
+        // Detach first, then re-find target to get correct index after removal.
+        const ctxs = detachManyWithContext(list);
+        const targetInfo = findNode(stateTree, targetId);
+        if (!targetInfo) return;
+        const siblings = targetInfo.siblings;
+        const idx = siblings.findIndex(n => n.id === targetId);
+        if (idx < 0) return;
+        let insertAt = mode === 'before' ? idx : idx + 1;
+        for (const ctx of ctxs) {
+          siblings.splice(insertAt, 0, ctx.node);
+          insertAt += 1;
+        }
       }
     }
 
@@ -1211,6 +1488,33 @@
       if (idx < 0) return null;
       const node = found.siblings.splice(idx, 1)[0];
       return { node, siblings: found.siblings, index: idx };
+    }
+
+    function detachManyWithContext(ids) {
+      const contexts = [];
+      const byParent = new Map();
+      for (const id of (ids || [])) {
+        const found = findNode(stateTree, id);
+        if (!found) continue;
+        const idx = found.siblings.findIndex(n => n.id === id);
+        if (idx < 0) continue;
+        const parentKey = found.parent ? found.parent.id : 'root';
+        if (!byParent.has(parentKey)) byParent.set(parentKey, []);
+        byParent.get(parentKey).push({ id, siblings: found.siblings, index: idx });
+      }
+
+      // Detach in descending index per parent to keep indices valid.
+      for (const group of byParent.values()) {
+        group.sort((a, b) => b.index - a.index);
+        for (const item of group) {
+          const node = item.siblings.splice(item.index, 1)[0];
+          contexts.push({ id: item.id, node, fromIndex: item.index });
+        }
+      }
+
+      // Return in ascending original index order (stable visual order within parent).
+      contexts.sort((a, b) => a.fromIndex - b.fromIndex);
+      return contexts;
     }
 
     function nodePath(id) {
@@ -1322,10 +1626,20 @@
       dropLineEl.style.display = 'block';
     }
 
-    function createNode(type) {
+    async function createNode(type) {
       const title = prompt(type === 'folder' ? 'Section title:' : 'Page title:');
       if (!title || !title.trim()) return;
 
+      const parentDir = (() => {
+        if (!selectedId) return '';
+        const info = findNode(stateTree, selectedId);
+        if (!info) return '';
+        if (info.node.type === 'folder') return folderDirForId(info.node.id);
+        if (info.parent && info.parent.type === 'folder') return folderDirForId(info.parent.id);
+        return '';
+      })();
+
+      let newId = '';
       withHistory('create', () => {
         const parentInfo = selectedId ? findNode(stateTree, selectedId) : null;
         let container = stateTree;
@@ -1340,184 +1654,359 @@
         }
 
         const id = crypto && crypto.randomUUID ? crypto.randomUUID().replace(/-/g, '') : String(Date.now());
+        newId = id;
         if (type === 'folder') {
           container.push({ id, type: 'folder', title: title.trim(), segment: '', file: null, children: [] });
         } else {
-          container.push({ id, type: 'page', title: title.trim(), file: null, segment: null, children: [] });
+          container.push({ id, type: 'page', title: title.trim(), file: null, file_prev: null, segment: null, children: [] });
         }
       });
       renderTree();
       updateHistoryButtons();
-      setStatus('Created (remember to Sync to create/move files).', 'info');
+
+      // Create on disk immediately (no Sync Files required for filesystem presence).
+      if (type === 'folder') {
+        try {
+          const data = await fetchJson('/api/create_section', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title: title.trim(), parent_dir: parentDir })
+          });
+          const found = findNode(stateTree, newId);
+          if (found && found.node && found.node.type === 'folder') {
+            found.node.segment = data.segment || found.node.segment || '';
+          }
+          renderTree();
+          await loadSource();
+          setStatus('Section created on disk.', 'success');
+        } catch (e) {
+          setStatus(e.message || 'Create section failed.', 'error');
+        }
+        return;
+      }
+
+      try {
+        const data = await fetchJson('/api/create_page', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: title.trim(), parent_dir: parentDir })
+        });
+        const found = findNode(stateTree, newId);
+        if (found && found.node && found.node.type === 'page') {
+          found.node.file = data.file || found.node.file;
+          found.node.file_prev = null;
+        }
+        renderTree();
+        await loadSource();
+        setStatus('Page created on disk.', 'success');
+      } catch (e) {
+        setStatus(e.message || 'Create page failed.', 'error');
+      }
     }
 
-	    function renameSelected() {
-	      if (!selectedId) return setStatus('Select a node first.', 'info');
-	      const rowTitle = document.querySelector(`#tree li[data-id="${selectedId}"] .node-title`);
-	      if (!rowTitle) return setStatus('Selected node not visible (expand parent folders).', 'info');
-	      beginInlineEdit(selectedId, 'title', rowTitle);
-	    }
-
-	    function beginInlineEdit(id, field, hostEl) {
-	      if (!id || !hostEl) return;
-	      const info = findNode(stateTree, id);
-	      if (!info) return setStatus('Node not found.', 'error');
-
-	      if (activeInlineEdit && activeInlineEdit.id === id && activeInlineEdit.field === field) return;
-	      if (activeInlineEdit) cancelInlineEdit();
-
-	      const li = hostEl.closest('li.node');
-	      if (!li) return;
-
-	      const originalValue =
-	        field === 'file' ? (info.node.file || '') :
-	        field === 'segment' ? (info.node.segment || '') :
-	        (info.node.title || '');
-	      const originalDir = (() => {
-	        if (field !== 'file') return '';
-	        const p = String(originalValue || '').replace(/^\.\//, '');
-	        const idx = p.lastIndexOf('/');
-	        return idx >= 0 ? p.slice(0, idx + 1) : '';
-	      })();
-	      const startValue =
-	        field === 'file' ? (() => {
-	          const p = String(originalValue || '').replace(/^\.\//, '');
-	          const idx = p.lastIndexOf('/');
-	          return idx >= 0 ? p.slice(idx + 1) : p;
-	        })() :
-	        field === 'segment' ? originalValue :
-	        displayTitleForNode(info.node);
-
-	      const input = document.createElement('input');
-	      input.type = 'text';
-	      input.className = 'inline-edit';
-	      input.value = startValue;
-	      input.spellcheck = false;
-	      input.draggable = false;
-
-	      const prevText = hostEl.textContent || '';
-	      hostEl.textContent = '';
-	      hostEl.appendChild(input);
-
-	      const prevDraggable = li.draggable;
-	      li.draggable = false;
-	      li.classList.add('is-editing');
-
-	      activeInlineEdit = { id, field, hostEl, input, prevText, prevDraggable, originalValue, originalDir };
-
-	      const finish = (mode) => {
-	        if (!activeInlineEdit) return;
-	        const current = activeInlineEdit;
-	        if (current.input) current.input.removeEventListener('keydown', onKeyDown);
-	        if (current.input) current.input.removeEventListener('blur', onBlur);
-	        li.draggable = current.prevDraggable;
-	        li.classList.remove('is-editing');
-	        const value = (current.input && current.input.value ? current.input.value : '').trim();
-	        activeInlineEdit = null;
-
-	        if (mode === 'cancel') {
-	          current.hostEl.textContent = current.prevText;
-	          return;
-	        }
-
-	        if (current.field === 'title') {
-	          if (!value) {
-	            current.hostEl.textContent = current.prevText;
-	            return;
-	          }
-	          withHistory('edit.title', () => {
-	            const nodeInfo = findNode(stateTree, current.id);
-	            if (nodeInfo) nodeInfo.node.title = value;
-	          });
-	          renderTree();
-	          updateHistoryButtons();
-	          setStatus('Renamed.', 'success');
-	          return;
-	        }
-
-	        if (current.field === 'segment') {
-	          if (value.includes('/') || value.includes('\\')) {
-	            setStatus('Folder name cannot contain slashes.', 'error');
-	            current.hostEl.textContent = current.prevText;
-	            return;
-	          }
-	          withHistory('edit.segment', () => {
-	            const nodeInfo = findNode(stateTree, current.id);
-	            if (!nodeInfo) return;
-	            nodeInfo.node.segment = value;
-	          });
-	          renderTree();
-	          updateHistoryButtons();
-	          setStatus('Updated folder name.', 'success');
-	          return;
-	        }
-
-	        if (current.field === 'file') {
-	          if (value.includes('/') || value.includes('\\')) {
-	            setStatus('Filename only (no directories).', 'error');
-	            current.hostEl.textContent = current.prevText;
-	            return;
-	          }
-	          withHistory('edit.file', () => {
-	            const nodeInfo = findNode(stateTree, current.id);
-	            if (!nodeInfo) return;
-	            const before = (current.originalValue || '').trim();
-	            if (before && !nodeInfo.node.file_prev) nodeInfo.node.file_prev = before;
-	            const base = value ? value.replace(/^\.\//, '') : '';
-	            nodeInfo.node.file = base ? `${current.originalDir}${base}` : null;
-	          });
-	          renderTree();
-	          updateHistoryButtons();
-	          setStatus('Updated file path.', 'success');
-	          return;
-	        }
-	      };
-
-	      const onKeyDown = (e) => {
-	        if (e.key === 'Enter') {
-	          e.preventDefault();
-	          finish('commit');
-	        } else if (e.key === 'Escape') {
-	          e.preventDefault();
-	          finish('cancel');
-	        }
-	      };
-	      const onBlur = () => finish('commit');
-
-	      input.addEventListener('keydown', onKeyDown);
-	      input.addEventListener('blur', onBlur);
-
-	      requestAnimationFrame(() => {
-	        input.focus();
-	        input.select();
-	      });
-	    }
-
-	    function cancelInlineEdit() {
-	      if (!activeInlineEdit) return;
-	      const current = activeInlineEdit;
-	      const li = current.hostEl.closest('li.node');
-	      if (current.input) current.input.remove();
-	      if (li) {
-	        li.draggable = current.prevDraggable;
-	        li.classList.remove('is-editing');
-	      }
-	      current.hostEl.textContent = current.prevText;
-	      activeInlineEdit = null;
-	    }
-
-    function deleteSelected() {
+    function renameSelected() {
       if (!selectedId) return setStatus('Select a node first.', 'info');
-      const ok = confirm('Delete selected node (tree only). Continue?');
+      const rowTitle = document.querySelector(`#tree li[data-id="${selectedId}"] .node-title`);
+      if (!rowTitle) return setStatus('Selected node not visible (expand parent folders).', 'info');
+      beginInlineEdit(selectedId, 'title', rowTitle);
+    }
+
+    function beginInlineEdit(id, field, hostEl) {
+      if (!id || !hostEl) return;
+      const info = findNode(stateTree, id);
+      if (!info) return setStatus('Node not found.', 'error');
+
+      if (activeInlineEdit && activeInlineEdit.id === id && activeInlineEdit.field === field) return;
+      if (activeInlineEdit) cancelInlineEdit();
+
+      const li = hostEl.closest('li.node');
+      if (!li) return;
+
+      const originalValue =
+        field === 'file' ? (info.node.file || '') :
+          field === 'segment' ? (info.node.segment || '') :
+            (info.node.title || '');
+      const originalDir = (() => {
+        if (field !== 'file') return '';
+        const p = String(originalValue || '').replace(/^\.\//, '');
+        const idx = p.lastIndexOf('/');
+        return idx >= 0 ? p.slice(0, idx + 1) : '';
+      })();
+      const startValue =
+        field === 'file' ? (() => {
+          const p = String(originalValue || '').replace(/^\.\//, '');
+          const idx = p.lastIndexOf('/');
+          return idx >= 0 ? p.slice(idx + 1) : p;
+        })() :
+          field === 'segment' ? originalValue :
+            displayTitleForNode(info.node);
+
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'inline-edit';
+      input.value = startValue;
+      input.spellcheck = false;
+      input.draggable = false;
+
+      const prevText = hostEl.textContent || '';
+      hostEl.textContent = '';
+      hostEl.appendChild(input);
+
+      const prevDraggable = li.draggable;
+      li.draggable = false;
+      li.classList.add('is-editing');
+
+      activeInlineEdit = { id, field, hostEl, input, prevText, prevDraggable, originalValue, originalDir };
+
+      const finish = (mode) => {
+        if (!activeInlineEdit) return;
+        const current = activeInlineEdit;
+        if (current.input) current.input.removeEventListener('keydown', onKeyDown);
+        if (current.input) current.input.removeEventListener('blur', onBlur);
+        li.draggable = current.prevDraggable;
+        li.classList.remove('is-editing');
+        const value = (current.input && current.input.value ? current.input.value : '').trim();
+        activeInlineEdit = null;
+
+        if (mode === 'cancel') {
+          current.hostEl.textContent = current.prevText;
+          return;
+        }
+
+        if (current.field === 'title') {
+          if (!value) {
+            current.hostEl.textContent = current.prevText;
+            return;
+          }
+          withHistory('edit.title', () => {
+            const nodeInfo = findNode(stateTree, current.id);
+            if (nodeInfo) nodeInfo.node.title = value;
+          });
+          renderTree();
+          updateHistoryButtons();
+          setStatus('Renamed.', 'success');
+          return;
+        }
+
+        if (current.field === 'segment') {
+          if (value.includes('/') || value.includes('\\')) {
+            setStatus('Folder name cannot contain slashes.', 'error');
+            current.hostEl.textContent = current.prevText;
+            return;
+          }
+          withHistory('edit.segment', () => {
+            const nodeInfo = findNode(stateTree, current.id);
+            if (!nodeInfo) return;
+            nodeInfo.node.segment = value;
+          });
+          renderTree();
+          updateHistoryButtons();
+          setStatus('Updated folder name.', 'success');
+          return;
+        }
+
+        if (current.field === 'file') {
+          if (value.includes('/') || value.includes('\\')) {
+            setStatus('Filename only (no directories).', 'error');
+            current.hostEl.textContent = current.prevText;
+            return;
+          }
+          withHistory('edit.file', () => {
+            const nodeInfo = findNode(stateTree, current.id);
+            if (!nodeInfo) return;
+            const before = (current.originalValue || '').trim();
+            if (before && !nodeInfo.node.file_prev) nodeInfo.node.file_prev = before;
+            const base = value ? value.replace(/^\.\//, '') : '';
+            nodeInfo.node.file = base ? `${current.originalDir}${base}` : null;
+          });
+          renderTree();
+          updateHistoryButtons();
+          setStatus('Updated file path.', 'success');
+          return;
+        }
+      };
+
+      const onKeyDown = (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          finish('commit');
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          finish('cancel');
+        }
+      };
+      const onBlur = () => finish('commit');
+
+      input.addEventListener('keydown', onKeyDown);
+      input.addEventListener('blur', onBlur);
+
+      requestAnimationFrame(() => {
+        input.focus();
+        input.select();
+      });
+    }
+
+    function cancelInlineEdit() {
+      if (!activeInlineEdit) return;
+      const current = activeInlineEdit;
+      const li = current.hostEl.closest('li.node');
+      if (current.input) current.input.remove();
+      if (li) {
+        li.draggable = current.prevDraggable;
+        li.classList.remove('is-editing');
+      }
+      current.hostEl.textContent = current.prevText;
+      activeInlineEdit = null;
+    }
+
+    async function deleteSelected() {
+      if ((!selectedId || !findNode(stateTree, selectedId)) && (!selectedIds || !selectedIds.size)) {
+        return setStatus('Select a node first.', 'info');
+      }
+      const ids = selectedIds && selectedIds.size ? Array.from(selectedIds) : [selectedId];
+      const folderCheck = classifyFoldersForDelete(ids);
+      if (folderCheck.blocking.length) {
+        const first = folderCheck.blocking[0];
+        return setStatus(`Cannot delete non-empty folder "${first.title}". Move its pages first.`, 'info');
+      }
+
+      const filesToDelete = collectFilesForIds(ids);
+      const dirsToDelete = folderCheck.emptyDirs;
+      const hasFiles = filesToDelete.length > 0;
+
+      const ok = confirm(hasFiles
+        ? `Delete ${ids.length} selected item(s) from the tree. You can also delete ${filesToDelete.length} file(s) on disk afterwards. Continue?`
+        : `Delete ${ids.length} selected item(s) from the tree only. Continue?`);
       if (!ok) return;
       let removed = null;
       withHistory('delete', () => {
-        removed = detachNode(selectedId);
+        const ctxs = detachManyWithContext(ids);
+        removed = ctxs.length ? { count: ctxs.length } : null;
       });
-      selectedId = '';
+      clearSelection();
       renderTree();
       updateHistoryButtons();
-      setStatus(removed ? 'Deleted.' : 'Not found.', removed ? 'success' : 'info');
+      setStatus(removed ? `Deleted ${removed.count || 1}.` : 'Not found.', removed ? 'success' : 'info');
+
+      if (dirsToDelete.length) {
+        await deleteDirsOnDisk(dirsToDelete);
+      }
+
+      if (hasFiles) {
+        const del = confirm(`Also delete the selected page file(s) from disk? (This cannot be undone)`);
+        if (del) {
+          await deleteFilesOnDisk(filesToDelete);
+        }
+      }
+    }
+
+    function classifyFoldersForDelete(ids) {
+      const blocking = [];
+      const emptyDirs = [];
+      const seenDirs = new Set();
+
+      function hasAnyPage(node) {
+        if (!node) return false;
+        if (node.type === 'page') return true;
+        for (const c of (node.children || [])) {
+          if (hasAnyPage(c)) return true;
+        }
+        return false;
+      }
+
+      for (const id of (ids || [])) {
+        const found = findNode(stateTree, id);
+        if (!found || !found.node) continue;
+        if (found.node.type !== 'folder') continue;
+        if (hasAnyPage(found.node)) {
+          blocking.push({ id, title: found.node.title || id });
+          continue;
+        }
+        const dir = folderDirForId(id);
+        if (dir && !seenDirs.has(dir)) {
+          seenDirs.add(dir);
+          emptyDirs.push(dir);
+        }
+      }
+      return { blocking, emptyDirs };
+    }
+
+    function folderDirForId(id) {
+      if (!id) return '';
+      const info = findNode(stateTree, id);
+      if (!info || !info.node || info.node.type !== 'folder') return '';
+      const segs = [];
+      const selfSeg = (info.node.segment || '').trim();
+      if (selfSeg) segs.push(selfSeg);
+      let p = info.parent;
+      while (p) {
+        if (p.type === 'folder' && p.segment) segs.push(String(p.segment).trim());
+        const parentInfo = findNode(stateTree, p.id);
+        p = parentInfo ? parentInfo.parent : null;
+      }
+      return segs.reverse().filter(Boolean).join('/');
+    }
+
+    function collectFilesForIds(ids) {
+      const out = [];
+      const seen = new Set();
+      function walk(node) {
+        if (!node) return;
+        if (node.type === 'page') {
+          if (node.file) {
+            const rel = String(node.file).replace(/^\.\//, '').trim();
+            if (rel && !seen.has(rel)) {
+              seen.add(rel);
+              out.push(rel);
+            }
+          }
+          return;
+        }
+        for (const c of (node.children || [])) walk(c);
+      }
+      for (const id of (ids || [])) {
+        const found = findNode(stateTree, id);
+        if (!found) continue;
+        walk(found.node);
+      }
+      return out;
+    }
+
+    async function deleteFilesOnDisk(files) {
+      setStatus('Deleting files...', 'info');
+      try {
+        const data = await fetchJson('/api/delete_files', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ files, delete_assets: false })
+        });
+        const deleted = Array.isArray(data.deleted) ? data.deleted : [];
+        const errors = Array.isArray(data.errors) ? data.errors : [];
+        const msg = `Deleted ${deleted.length} item(s) from disk.${errors.length ? ` errors:${errors.length}` : ''}`;
+        setStatus(msg, errors.length ? 'error' : 'success');
+        await loadSource();
+      } catch (e) {
+        setStatus(e.message || 'Delete files failed.', 'error');
+      }
+    }
+
+    async function deleteDirsOnDisk(dirs) {
+      if (!Array.isArray(dirs) || !dirs.length) return;
+      setStatus('Deleting empty folders...', 'info');
+      try {
+        const data = await fetchJson('/api/delete_dirs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dirs })
+        });
+        const deleted = Array.isArray(data.deleted) ? data.deleted : [];
+        const errors = Array.isArray(data.errors) ? data.errors : [];
+        const msg = `Deleted ${deleted.length} empty folder(s).${errors.length ? ` errors:${errors.length}` : ''}`;
+        setStatus(msg, errors.length ? 'error' : 'success');
+        await loadSource();
+      } catch (e) {
+        setStatus(e.message || 'Delete folders failed.', 'error');
+      }
     }
   </script>
 </body>
