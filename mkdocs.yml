@@ -1,12 +1,8 @@
 site_name: Mock test
 nav:
+- 是ds:
+  - '123232': []
 - Guide:
-  - 是ds:
-    - sda: s da/ds/sda.md
-  - love123:
-    - heihie: s da/123/heihie.md
-    - jdskds: s da/123/jdskds.md
-    - lo: s da/123/lo.md
-  - setup.md: s da/setup.md
-  - kjlk:
-    - uiiu: s da/dsds/uiiu.md
+  - dsd: s da/dsd.md
+  - dw: s da/dw.md
+- sda: sda.md

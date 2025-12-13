@@ -2,7 +2,7 @@
   color-scheme: light;
   --bg: #0b1020;
   --panel: #111a33;
-  --card: #0f1830;
+  --card: rgba(17, 26, 51, 0.62);
   --text: #e8eefc;
   --muted: rgba(232, 238, 252, 0.7);
   --border: rgba(232, 238, 252, 0.12);
@@ -28,6 +28,34 @@ body {
     var(--bg);
   color: var(--text);
   overflow: hidden;
+}
+
+body.theme-light {
+  color-scheme: light;
+  --bg: #e7ecf6;
+  --panel: rgba(255, 255, 255, 0.82);
+  --card: rgba(242, 245, 252, 0.92);
+  --text: #0b1220;
+  --muted: rgba(11, 18, 32, 0.62);
+  --border: rgba(10, 16, 34, 0.14);
+  --accent: #2f6fff;
+  --success: #1a9f5a;
+  --error: #d83b3b;
+  background: radial-gradient(1000px 700px at 15% 5%, rgba(47, 111, 255, 0.16), transparent 58%),
+    radial-gradient(1000px 700px at 85% 0%, rgba(26, 159, 90, 0.10), transparent 62%),
+    var(--bg);
+}
+
+.sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
 }
 
 .shell {
@@ -103,6 +131,20 @@ button.active {
 button:hover {
   background: rgba(255, 255, 255, 0.09);
   border-color: rgba(106, 169, 255, 0.35);
+}
+
+body.theme-light button {
+  background: rgba(10, 16, 34, 0.04);
+}
+
+body.theme-light button:hover {
+  background: rgba(10, 16, 34, 0.06);
+  border-color: rgba(10, 16, 34, 0.22);
+}
+
+body.theme-light button.active {
+  border-color: rgba(47, 111, 255, 0.42);
+  background: rgba(47, 111, 255, 0.10);
 }
 
 button:active {
@@ -186,11 +228,15 @@ button:active {
 }
 
 .card {
-  background: rgba(17, 26, 51, 0.62);
+  background: var(--card);
   border: 1px solid var(--border);
   border-radius: 16px;
   overflow: hidden;
   backdrop-filter: blur(8px);
+}
+
+body.theme-light .card {
+  box-shadow: 0 10px 22px rgba(11, 18, 32, 0.10);
 }
 
 .card-head {
@@ -228,6 +274,48 @@ button:active {
   border-radius: 12px;
   overflow: hidden;
   background: rgba(255, 255, 255, 0.03);
+}
+
+body.theme-light .segmented {
+  background: rgba(10, 16, 34, 0.03);
+}
+
+body.theme-light .source-twist,
+body.theme-light .tree-twist {
+  color: rgba(11, 18, 32, 0.55);
+}
+
+body.theme-light .source-name,
+body.theme-light .source-row.kind-dir .source-name {
+  color: rgba(11, 18, 32, 0.88);
+}
+
+body.theme-light .source-ascii,
+body.theme-light .source-prefix,
+body.theme-light .node-meta {
+  color: rgba(11, 18, 32, 0.55);
+}
+
+body.theme-light .source-row.clickable:hover,
+body.theme-light .source-line.clickable:hover,
+body.theme-light .tree-row:hover {
+  background: rgba(11, 18, 32, 0.04);
+}
+
+body.theme-light #tree .node.dir {
+  background: rgba(11, 18, 32, 0.02);
+  border-color: rgba(11, 18, 32, 0.10);
+}
+
+body.theme-light #tree .node.dir > ul {
+  border-top-color: rgba(11, 18, 32, 0.08);
+  border-left-color: rgba(11, 18, 32, 0.10);
+}
+
+body.theme-light .inline-edit {
+  border-color: rgba(11, 18, 32, 0.22);
+  background: rgba(255, 255, 255, 0.95);
+  color: rgba(11, 18, 32, 0.92);
 }
 
 .segmented button {

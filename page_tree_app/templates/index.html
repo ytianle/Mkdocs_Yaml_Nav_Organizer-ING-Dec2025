@@ -15,13 +15,14 @@
 	        <h1>MkDocs Nav Manager</h1>
 	        <div id="meta" class="muted">Loading...</div>
 	      </div>
-	      <div class="inline-actions">
-	        <button id="toggle-tools" type="button" class="ghost" data-help="Toggle Tools panel">🛠</button>
-	        <button id="toggle-source" type="button" class="ghost" data-help="Toggle Source panel">🗂</button>
-	        <button id="toggle-tree" type="button" class="ghost" data-help="Toggle Doc Tree panel">📚</button>
-	        <button id="toggle-info" type="button" class="ghost" data-help="Toggle Info panel">ℹ️</button>
-	      </div>
-	    </header>
+		      <div class="inline-actions">
+		        <button id="toggle-tools" type="button" class="ghost" data-help="Toggle Tools panel">🛠</button>
+		        <button id="toggle-source" type="button" class="ghost" data-help="Toggle Source panel">🗂</button>
+		        <button id="toggle-tree" type="button" class="ghost" data-help="Toggle Doc Tree panel">📚</button>
+		        <button id="toggle-info" type="button" class="ghost" data-help="Toggle Info panel">ℹ️</button>
+		        <button id="toggle-theme" type="button" class="ghost" data-help="Toggle theme (Day/Night)">🌙</button>
+		      </div>
+		    </header>
 
     <div id="tool-tooltip" class="tool-tooltip" hidden></div>
 
@@ -46,19 +47,16 @@
 
           <div class="splitter splitter-v splitter-tools" id="split-tools" title="Drag to resize tools"></div>
 
-          <div class="tools-group">
-            <div class="tools-title">🚀 Main</div>
-            <div class="tools-buttons">
-              <button id="tool-import" type="button" class="ghost"
-                data-help="Rebuild Doc Tree from mkdocs.yml nav (overwrites current draft)">📥 Load mkdocs.yml</button>
-              <button id="tool-sync-nav" type="button" class="ghost"
-                data-help="Write mkdocs.yml nav only (no file moves)">🧭 Sync Nav Only</button>
-              <button id="tool-sync-files" type="button" class="ghost"
-                data-help="Write mkdocs.yml and move files to match Doc Tree">📦 Sync Files</button>
-              <button id="tool-debug" type="button" class="ghost" data-help="Toggle debug window (DnD logs)">🧪
-                Debug</button>
-            </div>
-          </div>
+	          <div class="tools-group">
+	            <div class="tools-title">🚀 Main</div>
+	            <div class="tools-buttons">
+	              <button id="tool-import" type="button" class="ghost"
+	                data-help="Rebuild Doc Tree from mkdocs.yml nav (overwrites current draft)">📥 Load mkdocs.yml</button>
+	              <span class="sr-only" data-help="All edits auto-sync mkdocs.yml + files"></span>
+	              <button id="tool-debug" type="button" class="ghost" data-help="Toggle debug window (DnD logs)">🧪
+	                Debug</button>
+	            </div>
+	          </div>
         </div>
       </section>
 
@@ -164,10 +162,12 @@
 	    let treeMaxLevel = 'n';
 	    let toolTipEl = null;
 	    let activeInlineEdit = null;
-	    let showTools = false;
-	    let showSource = false;
-	    let showTree = true;
-	    let showInfo = false;
+	    let autoSyncTimer = null;
+		    let showTools = false;
+		    let showSource = false;
+		    let showTree = true;
+		    let showInfo = false;
+		    let theme = 'dark';
 
     document.addEventListener('DOMContentLoaded', () => {
 	      els = {
@@ -193,12 +193,10 @@
         deleteBtn: document.getElementById('delete-btn'),
         toolUndoBtn: document.getElementById('tool-undo'),
         toolRedoBtn: document.getElementById('tool-redo'),
-        toolReloadBtn: document.getElementById('tool-reload'),
-        toolImportBtn: document.getElementById('tool-import'),
-        toolSaveBtn: document.getElementById('tool-save'),
-        toolSyncNavBtn: document.getElementById('tool-sync-nav'),
-        toolSyncFilesBtn: document.getElementById('tool-sync-files'),
-        toolDebugBtn: document.getElementById('tool-debug'),
+	        toolReloadBtn: document.getElementById('tool-reload'),
+	        toolImportBtn: document.getElementById('tool-import'),
+	        toolSaveBtn: document.getElementById('tool-save'),
+	        toolDebugBtn: document.getElementById('tool-debug'),
         debugPanel: document.getElementById('debug-panel'),
         debugLog: document.getElementById('debug-log'),
         debugClear: document.getElementById('debug-clear'),
@@ -207,16 +205,15 @@
 	        splitBottom: document.getElementById('split-bottom'),
 	        splitInfoDebug: document.getElementById('split-info-debug'),
 	        splitTools: document.getElementById('split-tools'),
-	        toggleTools: document.getElementById('toggle-tools'),
-	        toggleSource: document.getElementById('toggle-source'),
-	        toggleTree: document.getElementById('toggle-tree'),
-	        toggleInfo: document.getElementById('toggle-info'),
-	      };
+		        toggleTools: document.getElementById('toggle-tools'),
+		        toggleSource: document.getElementById('toggle-source'),
+		        toggleTree: document.getElementById('toggle-tree'),
+		        toggleInfo: document.getElementById('toggle-info'),
+		        toggleTheme: document.getElementById('toggle-theme'),
+		      };
 
-      els.toolImportBtn.addEventListener('click', importFromMkdocs);
-      els.toolSaveBtn.addEventListener('click', saveTreeOnly);
-      els.toolSyncNavBtn.addEventListener('click', () => sync('nav_only'));
-      els.toolSyncFilesBtn.addEventListener('click', () => sync('sync_files'));
+	      els.toolImportBtn.addEventListener('click', importFromMkdocs);
+	      els.toolSaveBtn.addEventListener('click', saveTreeOnly);
 
       els.newFolderBtn.addEventListener('click', () => createNode('folder'));
       els.newPageBtn.addEventListener('click', () => createNode('page'));
@@ -263,11 +260,12 @@
 	      initSplitters();
 	      bindToolHoverHints();
 
-	      // Default hidden: Tools/Source/Info (user can toggle).
-	      showTools = localStorage.getItem('page_tree_show_tools') === 'true';
-	      showSource = localStorage.getItem('page_tree_show_source') === 'true';
-	      showTree = localStorage.getItem('page_tree_show_tree') !== 'false';
-	      showInfo = localStorage.getItem('page_tree_show_info') === 'true';
+		      // Default visible: Tools/Source/Doc Tree/Info (user can toggle).
+		      showTools = localStorage.getItem('page_tree_show_tools') !== 'false';
+		      showSource = localStorage.getItem('page_tree_show_source') !== 'false';
+		      showTree = localStorage.getItem('page_tree_show_tree') !== 'false';
+		      showInfo = localStorage.getItem('page_tree_show_info') !== 'false';
+	      initTheme();
 	      applyPanelVisibility();
 
 	      if (els.toggleTools) els.toggleTools.addEventListener('click', () => {
@@ -285,11 +283,12 @@
 	        localStorage.setItem('page_tree_show_tree', String(showTree));
 	        applyPanelVisibility();
 	      });
-	      if (els.toggleInfo) els.toggleInfo.addEventListener('click', () => {
-	        showInfo = !showInfo;
-	        localStorage.setItem('page_tree_show_info', String(showInfo));
-	        applyPanelVisibility();
-	      });
+		      if (els.toggleInfo) els.toggleInfo.addEventListener('click', () => {
+		        showInfo = !showInfo;
+		        localStorage.setItem('page_tree_show_info', String(showInfo));
+		        applyPanelVisibility();
+		      });
+		      if (els.toggleTheme) els.toggleTheme.addEventListener('click', toggleTheme);
 
 	      window.addEventListener('keydown', (e) => {
 	        if (activeInlineEdit) return;
@@ -298,12 +297,29 @@
         }
       });
 
-      loadMeta();
-      loadState();
-	      loadSource();
-	    });
+	      loadMeta();
+	      loadState();
+		      loadSource();
+		    });
 
-	    function applyPanelVisibility() {
+		    function initTheme() {
+		      theme = localStorage.getItem('page_tree_theme') || 'dark';
+		      applyTheme();
+		    }
+
+		    function toggleTheme() {
+		      theme = theme === 'light' ? 'dark' : 'light';
+		      localStorage.setItem('page_tree_theme', theme);
+		      applyTheme();
+		    }
+
+		    function applyTheme() {
+		      document.body.classList.toggle('theme-light', theme === 'light');
+		      if (els.toggleTheme) els.toggleTheme.textContent = theme === 'light' ? '☀️' : '🌙';
+		      pushDebug('theme.set', { theme });
+		    }
+
+		    function applyPanelVisibility() {
 	      if (els.panelTools) els.panelTools.hidden = !showTools;
 	      if (els.panelSource) els.panelSource.hidden = !showSource;
 	      if (els.panelTree) els.panelTree.hidden = !showTree;
@@ -327,24 +343,33 @@
 	      if (els.toggleInfo) els.toggleInfo.classList.toggle('active', showInfo);
 	    }
 
-    function bindToolHoverHints() {
-      toolTipEl = document.getElementById('tool-tooltip');
-      const buttons = document.querySelectorAll('[data-help]');
-      buttons.forEach(btn => {
-        btn.addEventListener('mouseenter', (e) => {
-          const text = btn.dataset.help || '';
-          setInfoHover(text);
-          showToolTip(text, e);
-        });
-        btn.addEventListener('mousemove', (e) => {
-          moveToolTip(e);
-        });
-        btn.addEventListener('mouseleave', () => {
-          setInfoHover('');
-          hideToolTip();
-        });
-      });
-    }
+		    function bindToolHoverHints() {
+	      toolTipEl = document.getElementById('tool-tooltip');
+	      const buttons = document.querySelectorAll('[data-help]');
+	      buttons.forEach(btn => {
+	        btn.addEventListener('mouseenter', (e) => {
+	          const text = btn.dataset.help || '';
+	          setInfoHover(text);
+	          showToolTip(text, e);
+	        });
+	        btn.addEventListener('mousemove', (e) => {
+	          moveToolTip(e);
+	        });
+	        btn.addEventListener('mouseleave', () => {
+	          setInfoHover('');
+	          hideToolTip();
+	        });
+	      });
+		    }
+
+	    function scheduleAutoSync(reason) {
+	      if (autoSyncTimer) clearTimeout(autoSyncTimer);
+	      autoSyncTimer = setTimeout(async () => {
+	        autoSyncTimer = null;
+	        pushDebug('auto_sync.run', { mode: 'sync_files', reason });
+	        await sync('sync_files', { confirm: false, silent: true });
+	      }, 250);
+	    }
 
     function showToolTip(text, e) {
       if (!toolTipEl) return;
@@ -466,6 +491,7 @@
       updateHistoryButtons();
       pushDebug('history.undo', {});
       setStatus('Undid last action.', 'success');
+      scheduleAutoSync('history.undo');
     }
 
     function redo() {
@@ -482,6 +508,7 @@
       updateHistoryButtons();
       pushDebug('history.redo', {});
       setStatus('Redid last action.', 'success');
+      scheduleAutoSync('history.redo');
     }
 
     async function reloadFromDisk() {
@@ -805,30 +832,36 @@
       }
     }
 
-    async function sync(mode) {
-      const msg = mode === 'sync_files'
-        ? 'This will move .md files (and sibling asset folders) on disk. Continue?'
-        : 'This will write mkdocs.yml nav. Continue?';
-      if (!confirm(msg)) return;
-      setStatus('Syncing...', 'info');
-      try {
-        const data = await fetchJson('/api/sync', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ mode, tree: stateTree })
-        });
-        const moves = Array.isArray(data.moves) ? data.moves : [];
-        const warnings = Array.isArray(data.warnings) ? data.warnings : [];
-        const extra = moves.length ? ` moved:${moves.length}` : '';
-        const warn = warnings.length ? ` warnings:${warnings.length}` : '';
-        setStatus(`Sync ok.${extra}${warn}`, warnings.length ? 'info' : 'success');
-        await loadState({ reset: true });
-        await loadSource();
-        lastPersistedSignature = treeSignature(stateTree);
-      } catch (e) {
-        setStatus(e.message || 'Sync failed.', 'error');
-      }
-    }
+	    async function sync(mode, options) {
+	      const opts = options || {};
+	      const shouldConfirm = opts.confirm !== false;
+	      const silent = !!opts.silent;
+
+	      if (shouldConfirm) {
+	        const msg = mode === 'sync_files'
+	          ? 'This will move .md files (and sibling asset folders) on disk. Continue?'
+	          : 'This will write mkdocs.yml nav. Continue?';
+	        if (!confirm(msg)) return;
+	      }
+	      if (!silent) setStatus('Syncing...', 'info');
+	      try {
+	        const data = await fetchJson('/api/sync', {
+	          method: 'POST',
+	          headers: { 'Content-Type': 'application/json' },
+	          body: JSON.stringify({ mode, tree: stateTree })
+	        });
+	        const moves = Array.isArray(data.moves) ? data.moves : [];
+	        const warnings = Array.isArray(data.warnings) ? data.warnings : [];
+	        const extra = moves.length ? ` moved:${moves.length}` : '';
+	        const warn = warnings.length ? ` warnings:${warnings.length}` : '';
+	        if (!silent) setStatus(`Sync ok.${extra}${warn}`, warnings.length ? 'info' : 'success');
+	        await loadState({ reset: true });
+	        await loadSource();
+	        lastPersistedSignature = treeSignature(stateTree);
+	      } catch (e) {
+	        setStatus(e.message || 'Sync failed.', 'error');
+	      }
+	    }
 
     function renderSource() {
       els.source.innerHTML = '';
@@ -862,7 +895,7 @@
 
 	        const row = document.createElement('div');
 	        row.className = 'source-row ' + (node.kind === 'dir' ? 'kind-dir' : 'kind-file');
-	        row.style.paddingLeft = `${8 + depth * 10}px`;
+	        row.style.paddingLeft = `${6 + depth * 8}px`;
         row.title = node.path ? `./${node.path}` : '';
 
         const twist = document.createElement('span');
@@ -1164,7 +1197,7 @@
 
 		        const row = document.createElement('div');
 		        row.className = 'row tree-row ' + (node.type === 'folder' ? 'kind-dir' : 'kind-file');
-		        row.style.paddingLeft = `${10 + depth * 10}px`;
+			        row.style.paddingLeft = `${8 + depth * 8}px`;
 		        row.addEventListener('click', (e) => {
 		          e.stopPropagation();
 		          if (activeInlineEdit) return;
@@ -1298,14 +1331,15 @@
       updateDropHintFromPointer(e.clientX, e.clientY);
     }
 
-    function onTreeDrop(e) {
-      if (!draggedId) return;
-      e.preventDefault();
-      pushDebug('drop.before', { draggedId, dropHint });
-      applyDrop();
-      clearDropVisual();
-      renderTree();
-    }
+	    function onTreeDrop(e) {
+	      if (!draggedId) return;
+	      e.preventDefault();
+	      pushDebug('drop.before', { draggedId, dropHint });
+	      applyDrop();
+	      clearDropVisual();
+	      renderTree();
+	      scheduleAutoSync('drag.drop');
+	    }
 
     function updateDropHintFromPointer(clientX, clientY) {
       const el = document.elementFromPoint(clientX, clientY);
@@ -1664,7 +1698,7 @@
       renderTree();
       updateHistoryButtons();
 
-      // Create on disk immediately (no Sync Files required for filesystem presence).
+      // Create on disk immediately.
       if (type === 'folder') {
         try {
           const data = await fetchJson('/api/create_section', {
@@ -1676,13 +1710,14 @@
           if (found && found.node && found.node.type === 'folder') {
             found.node.segment = data.segment || found.node.segment || '';
           }
-          renderTree();
-          await loadSource();
-          setStatus('Section created on disk.', 'success');
-        } catch (e) {
-          setStatus(e.message || 'Create section failed.', 'error');
-        }
-        return;
+	          renderTree();
+	          await loadSource();
+	          setStatus('Section created on disk.', 'success');
+	          scheduleAutoSync('create.section');
+	        } catch (e) {
+	          setStatus(e.message || 'Create section failed.', 'error');
+	        }
+	        return;
       }
 
       try {
@@ -1696,13 +1731,14 @@
           found.node.file = data.file || found.node.file;
           found.node.file_prev = null;
         }
-        renderTree();
-        await loadSource();
-        setStatus('Page created on disk.', 'success');
-      } catch (e) {
-        setStatus(e.message || 'Create page failed.', 'error');
-      }
-    }
+	        renderTree();
+	        await loadSource();
+	        setStatus('Page created on disk.', 'success');
+	        scheduleAutoSync('create.page');
+	      } catch (e) {
+	        setStatus(e.message || 'Create page failed.', 'error');
+	      }
+	    }
 
     function renameSelected() {
       if (!selectedId) return setStatus('Select a node first.', 'info');
@@ -1773,7 +1809,7 @@
           return;
         }
 
-        if (current.field === 'title') {
+	        if (current.field === 'title') {
           if (!value) {
             current.hostEl.textContent = current.prevText;
             return;
@@ -1782,49 +1818,88 @@
             const nodeInfo = findNode(stateTree, current.id);
             if (nodeInfo) nodeInfo.node.title = value;
           });
-          renderTree();
-          updateHistoryButtons();
-          setStatus('Renamed.', 'success');
-          return;
-        }
+	          renderTree();
+	          updateHistoryButtons();
+	          setStatus('Renamed.', 'success');
+	          scheduleAutoSync('rename.title');
+	          return;
+	        }
 
-        if (current.field === 'segment') {
+	        if (current.field === 'segment') {
           if (value.includes('/') || value.includes('\\')) {
             setStatus('Folder name cannot contain slashes.', 'error');
             current.hostEl.textContent = current.prevText;
             return;
           }
-          withHistory('edit.segment', () => {
-            const nodeInfo = findNode(stateTree, current.id);
-            if (!nodeInfo) return;
-            nodeInfo.node.segment = value;
-          });
-          renderTree();
-          updateHistoryButtons();
-          setStatus('Updated folder name.', 'success');
-          return;
-        }
+	          const oldDir = folderDirForId(current.id);
+	          const newSeg = value.trim();
+	          (async () => {
+	            setStatus('Renaming folder...', 'info');
+	            try {
+	              const data = await fetchJson('/api/rename_dir', {
+	                method: 'POST',
+	                headers: { 'Content-Type': 'application/json' },
+	                body: JSON.stringify({ dir: oldDir, new_segment: newSeg })
+	              });
+	              const newDir = data.dir || oldDir;
+	              withHistory('edit.segment', () => {
+	                const nodeInfo = findNode(stateTree, current.id);
+	                if (!nodeInfo) return;
+	                nodeInfo.node.segment = data.segment || newSeg;
+	                updateDescendantPagePaths(current.id, oldDir, newDir);
+	              });
+	              renderTree();
+	              updateHistoryButtons();
+	              await loadSource();
+	              setStatus('Folder renamed on disk.', 'success');
+	              scheduleAutoSync('rename.segment');
+	            } catch (e) {
+	              setStatus(e.message || 'Rename folder failed.', 'error');
+	              renderTree();
+	            }
+	          })();
+	          return;
+	        }
 
-        if (current.field === 'file') {
+	        if (current.field === 'file') {
           if (value.includes('/') || value.includes('\\')) {
             setStatus('Filename only (no directories).', 'error');
             current.hostEl.textContent = current.prevText;
             return;
           }
-          withHistory('edit.file', () => {
-            const nodeInfo = findNode(stateTree, current.id);
-            if (!nodeInfo) return;
-            const before = (current.originalValue || '').trim();
-            if (before && !nodeInfo.node.file_prev) nodeInfo.node.file_prev = before;
-            const base = value ? value.replace(/^\.\//, '') : '';
-            nodeInfo.node.file = base ? `${current.originalDir}${base}` : null;
-          });
-          renderTree();
-          updateHistoryButtons();
-          setStatus('Updated file path.', 'success');
-          return;
-        }
-      };
+	          const oldFile = String(current.originalValue || '').replace(/^\.\//, '').trim();
+	          const newBase = value.trim();
+	          if (!oldFile) {
+	            setStatus('Cannot rename: missing old file path.', 'error');
+	            return;
+	          }
+	          (async () => {
+	            setStatus('Renaming file...', 'info');
+	            try {
+	              const data = await fetchJson('/api/rename_file', {
+	                method: 'POST',
+	                headers: { 'Content-Type': 'application/json' },
+	                body: JSON.stringify({ old_file: oldFile, new_basename: newBase })
+	              });
+	              withHistory('edit.file', () => {
+	                const nodeInfo = findNode(stateTree, current.id);
+	                if (!nodeInfo) return;
+	                nodeInfo.node.file = data.file || nodeInfo.node.file;
+	                nodeInfo.node.file_prev = null;
+	              });
+	              renderTree();
+	              updateHistoryButtons();
+	              await loadSource();
+	              setStatus('File renamed on disk.', 'success');
+	              scheduleAutoSync('rename.file');
+	            } catch (e) {
+	              setStatus(e.message || 'Rename file failed.', 'error');
+	              renderTree();
+	            }
+	          })();
+	          return;
+	        }
+	      };
 
       const onKeyDown = (e) => {
         if (e.key === 'Enter') {
@@ -1846,18 +1921,39 @@
       });
     }
 
-    function cancelInlineEdit() {
-      if (!activeInlineEdit) return;
-      const current = activeInlineEdit;
-      const li = current.hostEl.closest('li.node');
-      if (current.input) current.input.remove();
-      if (li) {
-        li.draggable = current.prevDraggable;
-        li.classList.remove('is-editing');
-      }
-      current.hostEl.textContent = current.prevText;
-      activeInlineEdit = null;
-    }
+	    function cancelInlineEdit() {
+	      if (!activeInlineEdit) return;
+	      const current = activeInlineEdit;
+	      const li = current.hostEl.closest('li.node');
+	      if (current.input) current.input.remove();
+	      if (li) {
+	        li.draggable = current.prevDraggable;
+	        li.classList.remove('is-editing');
+	      }
+	      current.hostEl.textContent = current.prevText;
+	      activeInlineEdit = null;
+	    }
+
+	    function updateDescendantPagePaths(folderId, oldDir, newDir) {
+	      const info = findNode(stateTree, folderId);
+	      if (!info || !info.node || info.node.type !== 'folder') return;
+	      const oldPrefix = oldDir ? `${oldDir.replace(/\\/g, '/')}/` : '';
+	      const newPrefix = newDir ? `${newDir.replace(/\\/g, '/')}/` : '';
+	      const walk = (node) => {
+	        if (!node) return;
+	        if (node.type === 'page') {
+	          if (node.file && oldPrefix && node.file.startsWith(oldPrefix)) {
+	            node.file = newPrefix + node.file.slice(oldPrefix.length);
+	          }
+	          if (node.file_prev && oldPrefix && node.file_prev.startsWith(oldPrefix)) {
+	            node.file_prev = newPrefix + node.file_prev.slice(oldPrefix.length);
+	          }
+	          return;
+	        }
+	        for (const c of (node.children || [])) walk(c);
+	      };
+	      for (const c of (info.node.children || [])) walk(c);
+	    }
 
     async function deleteSelected() {
       if ((!selectedId || !findNode(stateTree, selectedId)) && (!selectedIds || !selectedIds.size)) {
@@ -1873,10 +1969,14 @@
       const filesToDelete = collectFilesForIds(ids);
       const dirsToDelete = folderCheck.emptyDirs;
       const hasFiles = filesToDelete.length > 0;
+      const hasDirs = dirsToDelete.length > 0;
 
-      const ok = confirm(hasFiles
-        ? `Delete ${ids.length} selected item(s) from the tree. You can also delete ${filesToDelete.length} file(s) on disk afterwards. Continue?`
-        : `Delete ${ids.length} selected item(s) from the tree only. Continue?`);
+      const summary = [
+        `Delete ${ids.length} item(s) from the tree`,
+        hasFiles ? `delete ${filesToDelete.length} page file(s) on disk` : null,
+        hasDirs ? `delete ${dirsToDelete.length} empty folder(s) on disk` : null,
+      ].filter(Boolean).join(', ') + '. Continue?';
+      const ok = confirm(summary);
       if (!ok) return;
       let removed = null;
       withHistory('delete', () => {
@@ -1887,17 +1987,11 @@
       renderTree();
       updateHistoryButtons();
       setStatus(removed ? `Deleted ${removed.count || 1}.` : 'Not found.', removed ? 'success' : 'info');
+      scheduleAutoSync('delete.tree');
 
-      if (dirsToDelete.length) {
-        await deleteDirsOnDisk(dirsToDelete);
-      }
-
-      if (hasFiles) {
-        const del = confirm(`Also delete the selected page file(s) from disk? (This cannot be undone)`);
-        if (del) {
-          await deleteFilesOnDisk(filesToDelete);
-        }
-      }
+      if (hasFiles) await deleteFilesOnDisk(filesToDelete, { deleteAssets: true });
+      if (hasDirs) await deleteDirsOnDisk(dirsToDelete);
+      if (hasFiles || hasDirs) scheduleAutoSync('delete.disk');
     }
 
     function classifyFoldersForDelete(ids) {
@@ -1972,13 +2066,15 @@
       return out;
     }
 
-    async function deleteFilesOnDisk(files) {
+    async function deleteFilesOnDisk(files, options) {
+      const opts = options || {};
+      const deleteAssets = !!opts.deleteAssets;
       setStatus('Deleting files...', 'info');
       try {
         const data = await fetchJson('/api/delete_files', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ files, delete_assets: false })
+          body: JSON.stringify({ files, delete_assets: deleteAssets })
         });
         const deleted = Array.isArray(data.deleted) ? data.deleted : [];
         const errors = Array.isArray(data.errors) ? data.errors : [];

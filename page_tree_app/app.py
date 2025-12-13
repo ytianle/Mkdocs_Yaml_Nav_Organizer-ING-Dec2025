@@ -17,7 +17,7 @@ from ruamel.yaml.comments import CommentedMap, CommentedSeq
 
 
 BASE_DIR = Path(__file__).resolve().parent
-REPO_ROOT = BASE_DIR.parent
+PROJECT_ROOT = BASE_DIR.parent
 
 app = Flask(
     __name__,
@@ -44,7 +44,7 @@ def _now_stamp() -> str:
 def _backup_file(path: Path) -> Path | None:
     if not path.exists():
         return None
-    backup_dir = REPO_ROOT / "backups" / "mkdocs"
+    backup_dir = BASE_DIR / "backups" / "mkdocs"
     backup_dir.mkdir(parents=True, exist_ok=True)
     backup_path = backup_dir / f"{path.name}.bak-{_now_stamp()}"
     copy2(path, backup_path)
@@ -90,16 +90,17 @@ def _mkdocs_path() -> Path:
     env = os.environ.get("MKDOCS_PATH") or os.environ.get("MKDOCS_FILE")
     if env:
         p = Path(env)
-        return p if p.is_absolute() else (REPO_ROOT / p)
-    return REPO_ROOT / "mkdocs.yml"
+        return p if p.is_absolute() else (PROJECT_ROOT / p)
+    return PROJECT_ROOT / "mkdocs.yml"
 
 
 def _state_path() -> Path:
     env = os.environ.get("STATE_PATH")
     if env:
         p = Path(env)
-        return p if p.is_absolute() else (REPO_ROOT / p)
-    return REPO_ROOT / ".page_tree_state.json"
+        return p if p.is_absolute() else (PROJECT_ROOT / p)
+    # Keep the draft inside the app folder so users can drop `page_tree_app/` into any project.
+    return BASE_DIR / ".page_tree_state.json"
 
 
 def _load_mkdocs_config(mkdocs: Path) -> CommentedMap:
@@ -124,7 +125,7 @@ def _docs_root(mkdocs: Path) -> Path:
     env = os.environ.get("DOCS_ROOT")
     if env:
         p = Path(env)
-        return p if p.is_absolute() else (REPO_ROOT / p)
+        return p if p.is_absolute() else (PROJECT_ROOT / p)
     try:
         config = _load_mkdocs_config(mkdocs)
         docs_dir = config.get("docs_dir")
@@ -134,10 +135,10 @@ def _docs_root(mkdocs: Path) -> Path:
     except Exception:
         pass
     for candidate in ("docs", "doc"):
-        guess = REPO_ROOT / candidate
+        guess = PROJECT_ROOT / candidate
         if guess.exists():
             return guess.resolve()
-    return REPO_ROOT
+    return PROJECT_ROOT
 
 
 MKDOCS_PATH = _mkdocs_path()
@@ -404,6 +405,46 @@ def _cleanup_empty_dirs(start_dirs: Iterable[Path], stop_at: Path) -> None:
             continue
 
 
+def _collect_desired_folder_dirs(nodes: list["Node"]) -> set[str]:
+    desired: set[str] = set()
+
+    def walk(items: list["Node"], ancestors: list["Node"]):
+        for node in items:
+            if node.type != "folder":
+                continue
+            segs = [a.segment for a in (ancestors + [node]) if a.type == "folder" and a.segment]
+            rel = "/".join(segs)
+            if rel:
+                desired.add(rel)
+            walk(node.children or [], ancestors + [node])
+
+    walk(nodes, [])
+    return desired
+
+
+def _ensure_desired_folder_dirs_exist(desired_dirs: set[str]) -> None:
+    for rel in sorted(desired_dirs, key=lambda s: len(s.split("/"))):
+        try:
+            (_safe_docs_path(rel)).mkdir(parents=True, exist_ok=True)
+        except Exception:
+            continue
+
+
+def _cleanup_stray_empty_dirs(root: Path, *, keep_rel_dirs: set[str]) -> None:
+    root = root.resolve()
+    for directory in sorted([p for p in root.rglob("*") if p.is_dir()], key=lambda p: len(p.parts), reverse=True):
+        try:
+            rel = directory.relative_to(root).as_posix()
+        except Exception:
+            continue
+        if not rel or rel in keep_rel_dirs:
+            continue
+        try:
+            directory.rmdir()
+        except OSError:
+            continue
+
+
 def _compute_folder_dir(ancestors: list[Node]) -> str:
     segments = [a.segment for a in ancestors if a.type == "folder" and a.segment]
     return "/".join(segments)
@@ -484,6 +525,94 @@ def _safe_docs_path(rel: str) -> Path:
     if docs not in path.parents and path != docs:
         raise ValueError("Path escapes docs root.")
     return path
+
+
+@app.route("/api/rename_file", methods=["POST"])
+def api_rename_file():
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return _json_error("Expected a JSON object.", 400)
+    old_file = str(payload.get("old_file") or "").strip()
+    new_basename = str(payload.get("new_basename") or "").strip()
+    if not old_file:
+        return _json_error("`old_file` is required.", 400)
+    if not new_basename:
+        return _json_error("`new_basename` is required.", 400)
+    if "/" in new_basename or "\\" in new_basename:
+        return _json_error("Filename must not include directories.", 400)
+
+    old_rel = _safe_rel_path(old_file)
+    try:
+        old_path = _safe_docs_path(old_rel)
+    except Exception as exc:
+        return _json_error(str(exc), 400)
+    if not old_path.exists() or not old_path.is_file():
+        return _json_error("Old file not found.", 404)
+
+    # Keep extension unless user specifies one.
+    base = new_basename
+    if "." not in Path(base).name:
+        base = f"{base}{old_path.suffix}"
+    if old_path.suffix.lower() == ".md" and not base.lower().endswith(".md"):
+        base = f"{base}.md"
+
+    new_path = (old_path.parent / base).resolve()
+    docs = DOCS_ROOT.resolve()
+    if docs not in new_path.parents and new_path != docs:
+        return _json_error("Path escapes docs root.", 400)
+    if new_path.exists():
+        return _json_error("Target already exists.", 409)
+
+    try:
+        old_path.rename(new_path)
+    except Exception as exc:
+        return _json_error(f"Rename failed: {exc}", 500)
+
+    return jsonify({"status": "ok", "file": new_path.relative_to(DOCS_ROOT).as_posix()})
+
+
+@app.route("/api/rename_dir", methods=["POST"])
+def api_rename_dir():
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return _json_error("Expected a JSON object.", 400)
+    dir_rel = str(payload.get("dir") or "").strip().strip("/")
+    new_segment = str(payload.get("new_segment") or "").strip().strip("/")
+    if not dir_rel:
+        return _json_error("`dir` is required.", 400)
+    if not new_segment:
+        return _json_error("`new_segment` is required.", 400)
+    if "/" in new_segment or "\\" in new_segment:
+        return _json_error("Invalid segment.", 400)
+
+    old_rel = _safe_rel_path(dir_rel)
+    try:
+        old_path = _safe_docs_path(old_rel)
+    except Exception as exc:
+        return _json_error(str(exc), 400)
+    if not old_path.exists() or not old_path.is_dir():
+        return _json_error("Directory not found.", 404)
+
+    parent = old_path.parent
+    new_path = (parent / new_segment).resolve()
+    docs = DOCS_ROOT.resolve()
+    if docs not in new_path.parents and new_path != docs:
+        return _json_error("Path escapes docs root.", 400)
+    if new_path.exists():
+        return _json_error("Target already exists.", 409)
+
+    try:
+        old_path.rename(new_path)
+    except Exception as exc:
+        return _json_error(f"Rename failed: {exc}", 500)
+
+    return jsonify(
+        {
+            "status": "ok",
+            "segment": new_segment,
+            "dir": new_path.relative_to(DOCS_ROOT).as_posix(),
+        }
+    )
 
 
 @app.route("/api/delete_files", methods=["POST"])
@@ -727,6 +856,9 @@ def api_sync():
         except Exception as exc:
             return _json_error(f"File move failed: {exc}", 500)
 
+        desired_dirs = _collect_desired_folder_dirs(nodes)
+        _ensure_desired_folder_dirs_exist(desired_dirs)
+        _cleanup_stray_empty_dirs(DOCS_ROOT, keep_rel_dirs=desired_dirs)
         _save_state(nodes)
 
     # Always write mkdocs.yml nav from current state (nav_only uses existing page.file)

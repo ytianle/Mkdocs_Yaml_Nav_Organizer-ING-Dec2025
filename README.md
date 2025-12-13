@@ -4,7 +4,7 @@
 
 ## Run
 
-`pip install -r requirements.txt`
+`pip install -r page_tree_app/requirements.txt`
 
 `python page_tree_app/app.py`
 

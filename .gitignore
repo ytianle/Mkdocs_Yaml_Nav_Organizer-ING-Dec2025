@@ -4,4 +4,5 @@ __pycache__/
 *.pyc
 
 .page_tree_state.json
-backups/
+page_tree_app/backups/
+page_tree_app/.page_tree_state.json
