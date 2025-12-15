@@ -528,6 +528,32 @@
       updateHistoryButtons();
     }
 
+    function makeSnapshot(tree, mode) {
+      return { tree: deepClone(tree), dragMode: mode || dragMode || 'sync_files' };
+    }
+
+    function snapshotTree(snapshot) {
+      // Back-compat: older history entries stored the tree array directly.
+      if (Array.isArray(snapshot)) return snapshot;
+      if (snapshot && Array.isArray(snapshot.tree)) return snapshot.tree;
+      return [];
+    }
+
+    function snapshotDragMode(snapshot) {
+      if (snapshot && typeof snapshot === 'object' && typeof snapshot.dragMode === 'string') return snapshot.dragMode;
+      return null;
+    }
+
+    function applySnapshot(snapshot) {
+      stateTree = deepClone(snapshotTree(snapshot));
+      const mode = snapshotDragMode(snapshot);
+      if (mode === 'nav_only' || mode === 'sync_files') {
+        dragMode = mode;
+        localStorage.setItem('page_tree_drag_mode', dragMode);
+        updateDragModeSwitch();
+      }
+    }
+
     function pushHistorySnapshot(snapshot) {
       historyPast.push(snapshot);
       if (historyPast.length > 5) historyPast.shift();
@@ -537,7 +563,7 @@
     }
 
     function withHistory(label, mutator) {
-      const before = deepClone(stateTree);
+      const before = makeSnapshot(stateTree, dragMode);
       pushHistorySnapshot(before);
       mutator();
       pushDebug('history.commit', { label });
@@ -589,19 +615,28 @@
       const beforePast = historyPast.slice();
       const beforeFuture = historyFuture.slice();
 
-      const current = deepClone(stateTree);
+      const current = makeSnapshot(stateTree, dragMode);
       const previous = historyPast.pop();
       historyFuture.push(current);
-      stateTree = deepClone(previous);
+      applySnapshot(previous);
       applyFilePrevFromCurrent(stateTree, buildFileMap(beforeTree));
       ensureSelectedValid();
       renderTree();
       updateHistoryButtons();
       pushDebug('history.undo', {});
       setStatus('Undoing...', 'info');
-      await sync('sync_files', { confirm: false, silent: true });
+      const res = await fetchJson('/api/apply_history_step', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ before_tree: beforeTree, after_tree: stateTree }),
+      });
+      if (res && res.error) {
+        setStatus(res.error, 'error');
+      } else {
+        setStatus('Undid last action.', 'success');
+      }
 
-      // If sync was blocked, `sync()` reloads state; keep history consistent by rolling back.
+      // If blocked, keep history consistent by rolling back.
       if (els.status && els.status.dataset.type === 'error' && String(els.status.textContent || '').includes('Sync blocked')) {
         stateTree = beforeTree;
         historyPast = beforePast;
@@ -612,8 +647,6 @@
         setStatus('Undo blocked by file conflict.', 'error');
         return;
       }
-
-      setStatus('Undid last action.', 'success');
       persistHistory();
     }
 
@@ -626,17 +659,26 @@
       const beforePast = historyPast.slice();
       const beforeFuture = historyFuture.slice();
 
-      const current = deepClone(stateTree);
+      const current = makeSnapshot(stateTree, dragMode);
       const next = historyFuture.pop();
       historyPast.push(current);
-      stateTree = deepClone(next);
+      applySnapshot(next);
       applyFilePrevFromCurrent(stateTree, buildFileMap(beforeTree));
       ensureSelectedValid();
       renderTree();
       updateHistoryButtons();
       pushDebug('history.redo', {});
       setStatus('Redoing...', 'info');
-      await sync('sync_files', { confirm: false, silent: true });
+      const res = await fetchJson('/api/apply_history_step', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ before_tree: beforeTree, after_tree: stateTree }),
+      });
+      if (res && res.error) {
+        setStatus(res.error, 'error');
+      } else {
+        setStatus('Redid last action.', 'success');
+      }
 
       if (els.status && els.status.dataset.type === 'error' && String(els.status.textContent || '').includes('Sync blocked')) {
         stateTree = beforeTree;
@@ -648,8 +690,6 @@
         setStatus('Redo blocked by file conflict.', 'error');
         return;
       }
-
-      setStatus('Redid last action.', 'success');
       persistHistory();
     }
 

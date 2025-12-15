@@ -756,6 +756,41 @@ def _collect_pages_under(nodes: Iterable[Node]) -> list[Node]:
     return out
 
 
+def _apply_moves_with_temps(moves: list[tuple[Path, Path]]) -> list[dict[str, str]]:
+    """Apply a set of renames safely even when moves form cycles."""
+    if not moves:
+        return []
+    # Phase 1: move every source to a unique temp path in its source directory.
+    tmp_moves: list[tuple[Path, Path]] = []
+    final_moves: list[tuple[Path, Path]] = []
+    touched_dirs: set[Path] = set()
+    for src, dst in moves:
+        touched_dirs.add(src.parent)
+        touched_dirs.add(dst.parent)
+        tmp = src.with_name(f".__tmp__{uuid4().hex}__{src.name}")
+        if tmp.exists():
+            raise FileExistsError(str(tmp))
+        tmp_moves.append((src, tmp))
+        final_moves.append((tmp, dst))
+
+    for src, tmp in tmp_moves:
+        if not src.exists():
+            raise FileNotFoundError(str(src))
+        tmp.parent.mkdir(parents=True, exist_ok=True)
+        src.rename(tmp)
+
+    applied: list[dict[str, str]] = []
+    for tmp, dst in final_moves:
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        if dst.exists():
+            raise FileExistsError(str(dst))
+        tmp.rename(dst)
+        applied.append({"from": tmp.name, "to": dst.relative_to(DOCS_ROOT).as_posix()})
+
+    _cleanup_empty_dirs(sorted(touched_dirs), DOCS_ROOT)
+    return applied
+
+
 def _plan_partial_sync(nodes: list[Node], moved_ids: set[str]) -> tuple[list[tuple[Path, Path]], list[tuple[Path, Path]], list[dict[str, Any]]]:
     """Plan moves only for pages under moved nodes (folders/pages)."""
     page_moves: list[tuple[Path, Path]] = []
@@ -973,6 +1008,151 @@ def api_rename_dir():
             "status": "ok",
             "segment": new_segment,
             "dir": new_path.relative_to(DOCS_ROOT).as_posix(),
+        }
+    )
+
+
+def _page_map(nodes: list[Node]) -> dict[str, Node]:
+    out: dict[str, Node] = {}
+    for p in _flatten_pages(nodes):
+        if p.id:
+            out[p.id] = p
+    return out
+
+
+@app.route("/api/apply_history_step", methods=["POST"])
+def api_apply_history_step():
+    """Apply an undo/redo step with minimal filesystem changes."""
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return _json_error("Expected a JSON object.", 400)
+
+    before_raw = payload.get("before_tree")
+    after_raw = payload.get("after_tree")
+    if not isinstance(before_raw, list) or not isinstance(after_raw, list):
+        return _json_error("`before_tree` and `after_tree` must be lists.", 400)
+
+    try:
+        before_nodes = [_node_from_dict(item) for item in before_raw]
+        after_nodes = [_node_from_dict(item) for item in after_raw]
+    except Exception as exc:
+        return _json_error(f"Invalid tree: {exc}", 400)
+
+    before_pages = _page_map(before_nodes)
+    after_pages = _page_map(after_nodes)
+
+    moves: list[tuple[Path, Path]] = []
+    asset_moves: list[tuple[Path, Path]] = []
+    deletes: list[Path] = []
+    asset_deletes: list[Path] = []
+    creates: list[str] = []
+    collisions: list[dict[str, Any]] = []
+
+    planned_sources: set[Path] = set()
+    planned_targets: set[Path] = set()
+
+    # Compute deletes (pages removed in target tree).
+    for pid, before_node in before_pages.items():
+        if pid in after_pages:
+            continue
+        if not before_node.file:
+            continue
+        rel = _safe_rel_path(before_node.file)
+        src = DOCS_ROOT / rel
+        deletes.append(src)
+        assets = src.with_suffix("")
+        if assets.exists() and assets.is_dir():
+            asset_deletes.append(assets)
+
+    # Compute creates (pages added in target tree).
+    for pid, after_node in after_pages.items():
+        if pid in before_pages:
+            continue
+        if not after_node.file:
+            continue
+        rel = _safe_rel_path(after_node.file)
+        creates.append(rel)
+
+    # Compute moves for pages whose file changed.
+    for pid, after_node in after_pages.items():
+        if pid not in before_pages:
+            continue
+        before_node = before_pages[pid]
+        before_file = (before_node.file or "").strip()
+        after_file = (after_node.file or "").strip()
+        if not before_file or not after_file:
+            continue
+        if _normalize_rel(before_file) == _normalize_rel(after_file):
+            continue
+        src_rel = _safe_rel_path(before_file)
+        dst_rel = _safe_rel_path(after_file)
+        src = DOCS_ROOT / src_rel
+        dst = DOCS_ROOT / dst_rel
+        if not src.exists():
+            # Nothing to move; allow nav/state to update anyway.
+            continue
+        moves.append((src, dst))
+        planned_sources.add(src.resolve())
+        planned_targets.add(dst.resolve())
+        src_assets = src.with_suffix("")
+        dst_assets = dst.with_suffix("")
+        if src_assets.exists() and src_assets.is_dir():
+            asset_moves.append((src_assets, dst_assets))
+            planned_sources.add(src_assets.resolve())
+            planned_targets.add(dst_assets.resolve())
+
+    # Validate collisions.
+    for _, dst in moves + asset_moves:
+        if dst.exists() and dst.resolve() not in planned_sources:
+            collisions.append({"type": "exists", "target": dst.relative_to(DOCS_ROOT).as_posix()})
+
+    if collisions:
+        return _json_error("Sync blocked by file conflict.", 409, collisions=collisions)
+
+    # Apply filesystem changes (only what changed).
+    try:
+        if deletes or asset_deletes:
+            for p in asset_deletes:
+                try:
+                    # Directory must be empty to remove.
+                    p.rmdir()
+                except OSError:
+                    pass
+            for p in deletes:
+                try:
+                    p.unlink()
+                except OSError:
+                    pass
+        moved_pages = _apply_moves_with_temps(moves) if moves else []
+        moved_assets = _apply_moves_with_temps(asset_moves) if asset_moves else []
+        for rel in creates:
+            # Create only if missing (no overwrite).
+            abs_path = DOCS_ROOT / rel
+            if abs_path.exists():
+                return _json_error("Sync blocked by file conflict.", 409, collisions=[{"type": "exists", "target": rel}])
+            _create_missing_page(rel, Path(rel).stem)
+    except FileExistsError as exc:
+        return _json_error("Sync blocked by file conflict.", 409, collisions=[{"type": "exists", "target": str(exc)}])
+    except Exception as exc:
+        return _json_error(f"File sync failed: {exc}", 500)
+
+    nav_value = _tree_to_mkdocs_nav(after_nodes)
+    try:
+        backup = _write_mkdocs_nav_only(MKDOCS_PATH, nav_value)
+    except Exception as exc:
+        return _json_error(f"Failed to write mkdocs.yml nav: {exc}", 500)
+
+    _save_state(after_nodes)
+    return jsonify(
+        {
+            "status": "ok",
+            "backup": str(backup) if backup else None,
+            "applied": {
+                "moves": moved_pages,
+                "assets": moved_assets,
+                "created": creates,
+                "deleted": [p.relative_to(DOCS_ROOT).as_posix() for p in deletes if p.exists() is False],
+            },
         }
     )
 
