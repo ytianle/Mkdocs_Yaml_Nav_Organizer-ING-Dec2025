@@ -863,6 +863,9 @@ ul {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  position: relative;
+  z-index: 2;
+  pointer-events: auto;
 }
 
 .overview-label {
@@ -891,9 +894,23 @@ ul {
   cursor: pointer;
 }
 
+.overview-inline.empty {
+  cursor: pointer;
+}
+
 .overview-inline.has-overview:hover {
   border-color: rgba(106, 169, 255, 0.32);
   background: rgba(106, 169, 255, 0.06);
+}
+
+.overview-inline.selected {
+  border-color: rgba(106, 169, 255, 0.55);
+  box-shadow: 0 0 0 3px rgba(106, 169, 255, 0.14);
+}
+
+body.theme-light .overview-inline.selected {
+  border-color: rgba(47, 111, 255, 0.55);
+  box-shadow: 0 0 0 3px rgba(47, 111, 255, 0.14);
 }
 
 body.theme-light .overview-inline {

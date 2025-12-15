@@ -10,7 +10,7 @@ nav:
       - section1/subsection/page3.md
     - Page 1: section1/page1.md
   - Section 2:
-    - section2/i.md
+    - section2/README.md
     - Section 3: section2/index2.md
     - Page A: section2/page.md
     - aa: section2/aa.md

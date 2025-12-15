@@ -149,9 +149,9 @@
     let selectionAnchorId = '';
     let selectionParentKey = '';
     let draggedId = '';
-    let draggedIds = [];
-    let dropHint = { mode: null, targetId: null };
-    let dropLineEl = null;
+		    let draggedIds = [];
+		    let dropHint = { mode: null, targetId: null };
+		    let dropLineEl = null;
     let debugEnabled = false;
     let debugLog = [];
     let lastDropHintSignature = '';
@@ -165,6 +165,7 @@
 		    let activeInlineEdit = null;
 		    let autoSyncTimer = null;
 		    let dragMode = 'sync_files'; // sync_files | nav_only
+		    let selectedDisplaySlotFolderId = '';
 		    let showTools = false;
     let showSource = false;
     let showTree = true;
@@ -1189,6 +1190,12 @@
         setInfoSelection(`Selection: ${selectedIds.size} items`);
         return;
       }
+      if (!selectedId && selectedDisplaySlotFolderId) {
+        const found = findNode(stateTree, selectedDisplaySlotFolderId);
+        const title = found && found.node ? found.node.title : '(section)';
+        setInfoSelection(`Selection: display | ${title}`);
+        return;
+      }
       if (!selectedId) {
         setInfoSelection('Selection: (none)');
         return;
@@ -1204,21 +1211,23 @@
       setInfoSelection(`Selection: ${kind} | ${found.node.title}${segment}${file}`);
     }
 
-    function selectNode(id) {
-      selectedId = id || '';
-      selectedIds = new Set(selectedId ? [selectedId] : []);
-      selectionAnchorId = selectedId;
-      selectionParentKey = selectionKeyForId(selectedId);
-      syncSelectionClasses();
-    }
+	    function selectNode(id) {
+	      selectedId = id || '';
+	      selectedIds = new Set(selectedId ? [selectedId] : []);
+	      selectionAnchorId = selectedId;
+	      selectionParentKey = selectionKeyForId(selectedId);
+	      selectedDisplaySlotFolderId = '';
+	      syncSelectionClasses();
+	    }
 
-    function clearSelection() {
-      selectedId = '';
-      selectedIds = new Set();
-      selectionAnchorId = '';
-      selectionParentKey = '';
-      syncSelectionClasses();
-    }
+	    function clearSelection() {
+	      selectedId = '';
+	      selectedIds = new Set();
+	      selectionAnchorId = '';
+	      selectionParentKey = '';
+	      selectedDisplaySlotFolderId = '';
+	      syncSelectionClasses();
+	    }
 
     function selectionKeyForId(id) {
       if (!id) return '';
@@ -1227,14 +1236,21 @@
       return info.parent ? `p:${info.parent.id}` : 'root';
     }
 
-    function syncSelectionClasses() {
-      document.querySelectorAll('#tree li.node.selected').forEach(el => el.classList.remove('selected'));
-      for (const id of (selectedIds || [])) {
-        const el = document.querySelector(`#tree li.node[data-id="${CSS.escape(id)}"]`);
-        if (el) el.classList.add('selected');
-      }
-      updateSelectionInfo();
-    }
+	    function syncSelectionClasses() {
+	      document.querySelectorAll('#tree li.node.selected').forEach(el => el.classList.remove('selected'));
+	      document.querySelectorAll('#tree .overview-inline.selected').forEach(el => el.classList.remove('selected'));
+	      for (const id of (selectedIds || [])) {
+	        const el = document.querySelector(`#tree li.node[data-id="${CSS.escape(id)}"]`);
+	        if (el) el.classList.add('selected');
+	        const ov = document.querySelector(`#tree .overview-inline[data-overview-id="${CSS.escape(id)}"]`);
+	        if (ov) ov.classList.add('selected');
+	      }
+	      if (selectedDisplaySlotFolderId) {
+	        const slot = document.querySelector(`#tree .overview-inline[data-folder-id="${CSS.escape(selectedDisplaySlotFolderId)}"]`);
+	        if (slot) slot.classList.add('selected');
+	      }
+	      updateSelectionInfo();
+	    }
 
     function selectWithModifiers(id, e) {
       const isMeta = !!(e && (e.metaKey || e.ctrlKey));
@@ -1406,6 +1422,10 @@
 	          const overview = children.find(c => c && c.type === 'page' && c.is_overview) || null;
 	          const slot = document.createElement('div');
 	          slot.className = 'overview-inline';
+	          slot.dataset.overviewId = overview && overview.id ? String(overview.id) : '';
+	          slot.dataset.folderId = li.dataset.id || '';
+	          // Prevent row click/drag handlers from swallowing slot interactions.
+	          slot.addEventListener('pointerdown', (e) => e.stopPropagation());
 	          const label = document.createElement('span');
 	          label.className = 'overview-label';
 	          label.textContent = 'Display';
@@ -1417,11 +1437,13 @@
 
 	          if (overview && overview.file) {
 	            slot.classList.add('has-overview');
+	            if ((selectedIds && selectedIds.has(overview.id)) || selectedId === overview.id) slot.classList.add('selected');
 	            value.textContent = `./${String(overview.file).replace(/^\.\//, '')}`;
 	            slot.title = value.textContent;
 	            slot.addEventListener('click', (e) => {
 	              e.stopPropagation();
 	              if (activeInlineEdit) return;
+	              selectedDisplaySlotFolderId = '';
 	              selectNode(overview.id);
 	            });
 	            slot.addEventListener('dblclick', (e) => {
@@ -1430,10 +1452,22 @@
 	              selectedId = overview.id;
 	              beginInlineEdit(overview.id, 'file', value);
 	            });
-	          } else {
-	            slot.classList.add('empty');
-	            value.textContent = '(none)';
-	          }
+		          } else {
+		            slot.classList.add('empty');
+		            value.textContent = '(none)';
+		            slot.addEventListener('click', (e) => {
+		              e.stopPropagation();
+		              if (activeInlineEdit) return;
+		              const folderId = li.dataset.id || '';
+		              // Select the display slot itself (no page exists yet).
+		              selectedId = '';
+		              selectedIds = new Set();
+		              selectionAnchorId = '';
+		              selectionParentKey = '';
+		              selectedDisplaySlotFolderId = folderId;
+		              syncSelectionClasses();
+		            });
+		          }
 	          row.appendChild(slot);
 	        }
 
@@ -1890,42 +1924,52 @@
     }
 
 	    async function createNode(type) {
-	      const title = prompt(type === 'folder' ? 'Section title:' : 'Page title:');
+	      const creatingDisplay = type === 'page' && !!selectedDisplaySlotFolderId;
+	      const title = creatingDisplay ? 'Overview' : prompt(type === 'folder' ? 'Section title:' : 'Page title:');
 	      if (!title || !title.trim()) return;
 
-      const parentDir = (() => {
-        if (!selectedId) return '';
-        const info = findNode(stateTree, selectedId);
-        if (!info) return '';
-        if (info.node.type === 'folder') return folderDirForId(info.node.id);
-        if (info.parent && info.parent.type === 'folder') return folderDirForId(info.parent.id);
-        return '';
-      })();
+	      const parentDir = (() => {
+	        if (selectedDisplaySlotFolderId) return folderDirForId(selectedDisplaySlotFolderId);
+	        if (!selectedId) return '';
+	        const info = findNode(stateTree, selectedId);
+	        if (!info) return '';
+	        if (info.node.type === 'folder') return folderDirForId(info.node.id);
+	        if (info.parent && info.parent.type === 'folder') return folderDirForId(info.parent.id);
+	        return '';
+	      })();
 
-      let newId = '';
-      withHistory('create', () => {
-        const parentInfo = selectedId ? findNode(stateTree, selectedId) : null;
-        let container = stateTree;
-        if (parentInfo) {
-          if (parentInfo.node.type === 'folder') {
-            parentInfo.node.children = Array.isArray(parentInfo.node.children) ? parentInfo.node.children : [];
-            container = parentInfo.node.children;
-          } else if (parentInfo.parent && parentInfo.parent.type === 'folder') {
-            parentInfo.parent.children = Array.isArray(parentInfo.parent.children) ? parentInfo.parent.children : [];
-            container = parentInfo.parent.children;
-          }
-        }
+	      let newId = '';
+	      withHistory('create', () => {
+	        const parentInfo = selectedDisplaySlotFolderId
+	          ? findNode(stateTree, selectedDisplaySlotFolderId)
+	          : (selectedId ? findNode(stateTree, selectedId) : null);
+	        let container = stateTree;
+	        if (parentInfo) {
+	          if (parentInfo.node.type === 'folder') {
+	            parentInfo.node.children = Array.isArray(parentInfo.node.children) ? parentInfo.node.children : [];
+	            container = parentInfo.node.children;
+	          } else if (parentInfo.parent && parentInfo.parent.type === 'folder') {
+	            parentInfo.parent.children = Array.isArray(parentInfo.parent.children) ? parentInfo.parent.children : [];
+	            container = parentInfo.parent.children;
+	          }
+	        }
 
-        const id = crypto && crypto.randomUUID ? crypto.randomUUID().replace(/-/g, '') : String(Date.now());
-        newId = id;
-        if (type === 'folder') {
-          container.push({ id, type: 'folder', title: title.trim(), segment: '', file: null, children: [] });
-        } else {
-          container.push({ id, type: 'page', title: title.trim(), file: null, file_prev: null, segment: null, children: [] });
-        }
-      });
-      renderTree();
-      updateHistoryButtons();
+	        const id = crypto && crypto.randomUUID ? crypto.randomUUID().replace(/-/g, '') : String(Date.now());
+	        newId = id;
+	        if (type === 'folder') {
+	          container.push({ id, type: 'folder', title: title.trim(), segment: '', file: null, children: [] });
+	        } else {
+	          // If user clicked an empty Display slot, create a dedicated overview page (title-less, fixed slot).
+	          if (creatingDisplay) {
+	            const already = container.find(n => n && n.type === 'page' && n.is_overview);
+	            if (!already) container.unshift({ id, type: 'page', title: '', is_overview: true, file: null, file_prev: null, segment: null, children: [] });
+	          } else {
+	            container.push({ id, type: 'page', title: title.trim(), file: null, file_prev: null, segment: null, children: [] });
+	          }
+	        }
+	      });
+	      renderTree();
+	      updateHistoryButtons();
 
 	      // Create on disk immediately.
 	      if (type === 'folder') {
@@ -1974,25 +2018,28 @@
         return;
       }
 
-      try {
-        const data = await fetchJson('/api/create_page', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title: title.trim(), parent_dir: parentDir })
-        });
-        const found = findNode(stateTree, newId);
-        if (found && found.node && found.node.type === 'page') {
-          found.node.file = data.file || found.node.file;
-          found.node.file_prev = null;
-        }
-        renderTree();
-        await loadSource();
-        setStatus('Page created on disk.', 'success');
-        scheduleAutoSync('create.page');
-      } catch (e) {
-        setStatus(e.message || 'Create page failed.', 'error');
-      }
-    }
+	      try {
+	        const data = await fetchJson('/api/create_page', {
+	          method: 'POST',
+	          headers: { 'Content-Type': 'application/json' },
+	          body: JSON.stringify(creatingDisplay
+	            ? { title: 'Overview', parent_dir: parentDir, basename: 'README.md' }
+	            : { title: title.trim(), parent_dir: parentDir })
+	        });
+	        const found = findNode(stateTree, newId);
+	        if (found && found.node && found.node.type === 'page') {
+	          found.node.file = data.file || found.node.file;
+	          found.node.file_prev = null;
+	          if (creatingDisplay) found.node.is_overview = true;
+	        }
+	        renderTree();
+	        await loadSource();
+	        setStatus(creatingDisplay ? 'Display page created.' : 'Page created on disk.', 'success');
+	        scheduleAutoSync(creatingDisplay ? 'create.display' : 'create.page');
+	      } catch (e) {
+	        setStatus(e.message || 'Create page failed.', 'error');
+	      }
+	    }
 
     function renameSelected() {
       if (!selectedId) return setStatus('Select a node first.', 'info');
