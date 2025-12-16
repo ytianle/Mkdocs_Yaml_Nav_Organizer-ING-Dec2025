@@ -94,6 +94,8 @@
                 Section</button>
               <button id="new-page-btn" type="button" data-help="Create a new page under selection">➕📄 New
                 Page</button>
+              <button id="new-page-with-folder-btn" type="button"
+                data-help="Create a page (nav only) and store it inside a same-named folder on disk">➕📄 Page w/ Folder</button>
               <button id="delete-btn" type="button" data-help="Delete selected node (tree only)">🗑️ Delete</button>
             </div>
           </div>
@@ -197,6 +199,7 @@
         sourceViewBtn: document.getElementById('source-view-btn'),
         newFolderBtn: document.getElementById('new-folder-btn'),
         newPageBtn: document.getElementById('new-page-btn'),
+        newPageWithFolderBtn: document.getElementById('new-page-with-folder-btn'),
         deleteBtn: document.getElementById('delete-btn'),
         toolUndoBtn: document.getElementById('tool-undo'),
 	        toolRedoBtn: document.getElementById('tool-redo'),
@@ -221,11 +224,13 @@
         toggleTheme: document.getElementById('toggle-theme'),
       };
 
-		      els.toolImportBtn.addEventListener('click', () => importFromMkdocs({ confirm: true }));
+		      // Load mkdocs.yml from disk, overwrite current draft tree, and beautify nav formatting.
+		      els.toolImportBtn.addEventListener('click', () => importFromMkdocs({ confirm: true, beautify: true }));
 		      if (els.toolBeautifyNavBtn) els.toolBeautifyNavBtn.addEventListener('click', beautifyNav);
 
       els.newFolderBtn.addEventListener('click', () => createNode('folder'));
       els.newPageBtn.addEventListener('click', () => createNode('page'));
+      if (els.newPageWithFolderBtn) els.newPageWithFolderBtn.addEventListener('click', createPageWithFolder);
       els.deleteBtn.addEventListener('click', deleteSelected);
 	      els.toolUndoBtn.addEventListener('click', undo);
 	      els.toolRedoBtn.addEventListener('click', redo);
@@ -1007,6 +1012,7 @@
 	    async function importFromMkdocs(options) {
 	      const opts = options || {};
 	      const shouldConfirm = opts.confirm !== false;
+	      const shouldBeautify = opts.beautify === true;
 	      if (shouldConfirm) {
 	        if (!confirm('Import will overwrite current tree state. Continue?')) return;
 	      }
@@ -1022,6 +1028,12 @@
 	        updateHistoryButtons();
 	        setStatus(warnings.length ? `Imported with warnings (${warnings.length}).` : 'Imported from mkdocs.yml.', warnings.length ? 'info' : 'success');
 	        await loadSource();
+	        if (shouldBeautify) {
+	          // Re-write mkdocs.yml nav with normalized 2-space indentation (nav block only; no file moves).
+	          pushDebug('import.beautify', {});
+	          await sync('nav_only', { confirm: false, silent: true });
+	          setStatus('Loaded and beautified mkdocs.yml nav.', 'success');
+	        }
 	      } catch (e) {
 	        const data = e && e.data ? e.data : null;
 	        if (data && Array.isArray(data.errors)) {
@@ -2165,6 +2177,66 @@
 	        scheduleNavOnly(creatingDisplay ? 'create.display' : 'create.page');
 	      } catch (e) {
 	        setStatus(e.message || 'Create page failed.', 'error');
+	      }
+	    }
+
+	    async function createPageWithFolder() {
+	      if (activeInlineEdit) return;
+	      const title = prompt('Page title (folder + file will use the same name):');
+	      if (!title || !title.trim()) return;
+	      const cleanTitle = title.trim();
+
+	      const parentDir = (() => {
+	        if (selectedDisplaySlotFolderId) return folderDirForId(selectedDisplaySlotFolderId);
+	        if (!selectedId) return '';
+	        const info = findNode(stateTree, selectedId);
+	        if (!info) return '';
+	        if (info.node.type === 'folder') return folderDirForId(info.node.id);
+	        if (info.parent && info.parent.type === 'folder') return folderDirForId(info.parent.id);
+	        return '';
+	      })();
+
+	      let pageId = '';
+	      withHistory('create.page_with_folder', () => {
+	        const parentInfo = selectedDisplaySlotFolderId
+	          ? findNode(stateTree, selectedDisplaySlotFolderId)
+	          : (selectedId ? findNode(stateTree, selectedId) : null);
+	        let container = stateTree;
+	        if (parentInfo) {
+	          if (parentInfo.node.type === 'folder') {
+	            parentInfo.node.children = Array.isArray(parentInfo.node.children) ? parentInfo.node.children : [];
+	            container = parentInfo.node.children;
+	          } else if (parentInfo.parent && parentInfo.parent.type === 'folder') {
+	            parentInfo.parent.children = Array.isArray(parentInfo.parent.children) ? parentInfo.parent.children : [];
+	            container = parentInfo.parent.children;
+	          }
+	        }
+
+	        pageId = crypto && crypto.randomUUID ? crypto.randomUUID().replace(/-/g, '') : String(Date.now() + 1);
+	        container.push({ id: pageId, type: 'page', title: cleanTitle, file: null, file_prev: null, segment: null, children: [] });
+	      });
+
+	      renderTree();
+	      updateHistoryButtons();
+	      setStatus('Creating folder + page...', 'info');
+
+	      try {
+	        const page = await fetchJson('/api/create_page_with_folder', {
+	          method: 'POST',
+	          headers: { 'Content-Type': 'application/json' },
+	          body: JSON.stringify({ title: cleanTitle, parent_dir: parentDir })
+	        });
+	        const pageFound = findNode(stateTree, pageId);
+	        if (pageFound && pageFound.node && pageFound.node.type === 'page') {
+	          pageFound.node.file = page.file || pageFound.node.file;
+	          pageFound.node.file_prev = null;
+	        }
+	        renderTree();
+	        await loadSource();
+	        setStatus('Page + folder created on disk.', 'success');
+	        scheduleNavOnly('create.page_with_folder');
+	      } catch (e) {
+	        setStatus(e.message || 'Create page + folder failed.', 'error');
 	      }
 	    }
 

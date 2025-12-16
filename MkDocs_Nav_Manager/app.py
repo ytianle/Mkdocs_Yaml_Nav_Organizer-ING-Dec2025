@@ -1012,6 +1012,43 @@ def api_rename_dir():
     )
 
 
+@app.route("/api/create_page_with_folder", methods=["POST"])
+def api_create_page_with_folder():
+    """Create a single page in nav, but place the file inside a same-named folder on disk."""
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return _json_error("Expected a JSON object.", 400)
+    title = str(payload.get("title") or "").strip()
+    parent_dir = str(payload.get("parent_dir") or "").strip().strip("/")
+    if not title:
+        return _json_error("`title` is required.", 400)
+
+    folder_seg = _slugify(title)
+    file_base = f"{folder_seg}.md"
+
+    folder_rel = f"{parent_dir}/{folder_seg}" if parent_dir else folder_seg
+    file_rel = f"{folder_rel}/{file_base}"
+    try:
+        folder_rel = _safe_rel_path(folder_rel)
+        file_rel = _safe_rel_path(file_rel)
+    except Exception as exc:
+        return _json_error(str(exc), 400)
+
+    folder_path = _safe_docs_path(folder_rel)
+    file_path = _safe_docs_path(file_rel)
+    if file_path.exists():
+        return _json_error("Target already exists.", 409)
+
+    try:
+        folder_path.mkdir(parents=True, exist_ok=True)
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        file_path.write_text(f"# {title}\n", encoding="utf-8")
+    except Exception as exc:
+        return _json_error(f"Create page failed: {exc}", 500)
+
+    return jsonify({"status": "ok", "file": file_rel, "dir": folder_rel})
+
+
 def _page_map(nodes: list[Node]) -> dict[str, Node]:
     out: dict[str, Node] = {}
     for p in _flatten_pages(nodes):
