@@ -399,6 +399,50 @@ body.theme-light .inline-edit {
   color: rgba(11, 18, 32, 0.92);
 }
 
+/* Additional Source explorer visuals and stronger locate highlight */
+.source-explorer,
+.source-children {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 13px;
+}
+
+.source-item { padding: 2px 6px; }
+
+.source-row { display:flex; align-items:center; gap:8px; border-radius:6px; }
+.source-row.kind-dir { color: var(--accent); font-weight:600; }
+.source-row.kind-file { color: var(--text); }
+.source-icon { width:18px; text-align:center; }
+.source-name { flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.source-twist { width:16px; display:inline-block; text-align:center; }
+
+.source-children { border-left: 1px solid rgba(255,255,255,0.04); margin-left:12px; padding-left:8px; }
+
+.source-row.clickable:hover { background: rgba(106,169,255,0.06); }
+
+/* Strong highlight for located file */
+.source-item.flash > .source-row {
+  background: linear-gradient(90deg, rgba(255,223,93,0.22), rgba(255,245,208,0.06));
+  box-shadow: 0 4px 18px rgba(11,92,255,0.06);
+  border: 1px solid rgba(11,92,255,0.14);
+}
+
+/* ASCII line highlighing */
+.source-line.flash { background: linear-gradient(90deg, rgba(255,223,93,0.22), rgba(255,245,208,0.06)); border-radius:6px; padding:2px 6px; }
+.source-line.located { background: linear-gradient(90deg, rgba(255,223,93,0.22), rgba(255,245,208,0.06)); border-radius:6px; padding:2px 6px; }
+
+/* Persistent located state */
+.source-item.located > .source-row {
+  background: linear-gradient(90deg, rgba(255,223,93,0.22), rgba(255,245,208,0.06));
+  box-shadow: 0 4px 18px rgba(11,92,255,0.06);
+  border: 1px solid rgba(11,92,255,0.14);
+}
+
+/* Make hierarchy lines a bit more visible in light theme */
+body.theme-light .source-children { border-left-color: rgba(11,18,32,0.07); }
+
+
 .segmented button {
   border: 0;
   border-right: 1px solid rgba(232, 238, 252, 0.10);

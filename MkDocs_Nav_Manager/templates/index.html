@@ -74,9 +74,9 @@
         <div class="splitter splitter-v" id="split-main-left" title="Drag to resize"></div>
 
 	        <section class="card panel" id="panel-tree">
-	          <div class="card-head">
-	            <h2>📚 Doc Tree</h2>
-	            <div class="inline-actions">
+            <div class="card-head">
+              <h2>📚 Doc Tree</h2>
+              <div class="inline-actions">
 	              <label class="switch" title="" data-help="" id="drag-mode-switch">
 	                <input id="drag-mode-toggle" type="checkbox" aria-label="Drag mode toggle">
 	                <span class="switch-track"></span>
@@ -97,6 +97,7 @@
               <button id="new-page-with-folder-btn" type="button"
                 data-help="Create a page (nav only) and store it inside a same-named folder on disk">➕📄 Page w/ Folder</button>
               <button id="delete-btn" type="button" data-help="Delete selected node (tree only)">🗑️ Delete</button>
+              <button id="tree-locate-btn" type="button" class="ghost" data-help="Locate selection in Source">📍 Locate</button>
             </div>
           </div>
           <div id="tree" class="list-shell">Loading...</div>
@@ -176,6 +177,10 @@
     let showTree = true;
     let showInfo = false;
     let theme = 'dark';
+    // Registry for one-time global handlers that clear the persistent located highlight
+    let locatedClearHandlers = [];
+    // Suppress clearing for a short window right after installing handlers
+    let locatedSuppressUntil = 0;
 
 	    document.addEventListener('DOMContentLoaded', () => {
       els = {
@@ -222,6 +227,7 @@
         toggleTree: document.getElementById('toggle-tree'),
         toggleInfo: document.getElementById('toggle-info'),
         toggleTheme: document.getElementById('toggle-theme'),
+        treeLocateBtn: document.getElementById('tree-locate-btn'),
       };
 
 		      // Load mkdocs.yml from disk, overwrite current draft tree, and beautify nav formatting.
@@ -304,8 +310,46 @@
       });
       if (els.toggleTheme) els.toggleTheme.addEventListener('click', toggleTheme);
 
+      // Locate button in the Doc Tree header: locate selected page/overview in Source pane
+      if (els.treeLocateBtn) els.treeLocateBtn.addEventListener('click', () => {
+        // Determine selection id: prefer single selectedId, then first of selectedIds
+        const id = selectedId || (selectedIds && selectedIds.size ? Array.from(selectedIds)[0] : '');
+        // Helper to open source panel and call locateByFile
+        const openAndLocate = (filePath) => {
+          showSource = true;
+          localStorage.setItem('page_tree_show_source', String(true));
+          applyPanelVisibility();
+          locateByFile(filePath);
+        };
+
+        if (!id) {
+          // If no explicit selection, but a display slot folder selected, try to locate its overview
+          if (selectedDisplaySlotFolderId) {
+            const found = findNode(stateTree, selectedDisplaySlotFolderId);
+            if (found && found.node && found.node.type === 'folder') {
+              const overview = (found.node.children || []).find(c => c && c.type === 'page' && c.is_overview && c.file);
+              if (overview && overview.file) return openAndLocate(overview.file);
+            }
+          }
+          return setStatus('No page selected to locate.', 'info');
+        }
+
+        const found = findNode(stateTree, id);
+        if (!found) return setStatus('Selected node not in tree.', 'info');
+        const node = found.node;
+        if (node.type === 'page' && node.file) return openAndLocate(node.file);
+        if (node.type === 'folder') {
+          const overview = (node.children || []).find(c => c && c.type === 'page' && c.is_overview && c.file);
+          if (overview && overview.file) return openAndLocate(overview.file);
+        }
+        setStatus('Selected node has no associated file to locate.', 'info');
+      });
+
       window.addEventListener('keydown', (e) => {
         if (activeInlineEdit) return;
+        // Clear located highlight on navigation keys or when selection changes
+        const navKeys = ['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Enter','Delete','Backspace','PageUp','PageDown','Home','End'];
+        if (navKeys.includes(e.key)) clearLocatedSource();
         if (e.key === 'Escape') {
           clearSelection();
         }
@@ -1178,7 +1222,25 @@
           row.classList.add('clickable');
           row.addEventListener('click', (e) => {
             e.stopPropagation();
-            locateByFile(node.path || '');
+            // If this file is a section README/index and we can find its overview page, select the overview
+            const overview = findOverviewBySourcePath(node.path || '');
+            if (overview) {
+              selectNode(overview.id);
+              return;
+            }
+            // Default: select the page nav element corresponding to this file
+            // Shift+click: select the containing section (folder) instead
+            const info = findNodeByFile(node.path || '');
+            if (e.shiftKey && info && info.parent && info.parent.id) {
+              // select the parent folder's nav element
+              selectNode(info.parent.id);
+            } else if (info && info.node && info.node.id) {
+              // select the page nav element
+              locateInTree(node.path || '', { markSourceLocated: false });
+            } else {
+              // fallback: try locate by path without marking source
+              locateInTree(node.path || '', { markSourceLocated: false });
+            }
           });
         } else if (node.kind === 'dir') {
           row.classList.add('clickable');
@@ -1212,6 +1274,7 @@
 
           const line = document.createElement('div');
           line.className = 'source-line';
+          if (node.path) line.dataset.path = node.path || '';
 
           const pre = document.createElement('span');
           pre.className = 'source-prefix';
@@ -1229,7 +1292,19 @@
             line.classList.add('clickable');
             line.addEventListener('click', (e) => {
               e.stopPropagation();
-              locateByFile(node.path || '');
+              // If this file is a section README/index and we can find its overview page, select the overview
+              const overview = findOverviewBySourcePath(node.path || '');
+              if (overview) { selectNode(overview.id); return; }
+              // Default: select the page nav element corresponding to this file
+              // Shift+click: select the containing section (folder) instead
+              const info = findNodeByFile(node.path || '');
+              if (e.shiftKey && info && info.parent && info.parent.id) {
+                selectNode(info.parent.id);
+              } else if (info && info.node && info.node.id) {
+                locateInTree(node.path || '', { markSourceLocated: false });
+              } else {
+                locateInTree(node.path || '', { markSourceLocated: false });
+              }
             });
           }
 
@@ -1249,18 +1324,266 @@
     }
 
     function locateByFile(file) {
+      // Keep legacy tree-locate behavior but prefer locating inside Source explorer
       const normalized = normalizePath(file);
       if (!normalized) return;
+      const foundInSource = locateInSource(file);
+      if (foundInSource) return;
+      // Fallback: highlight in tree if not found in source
       const all = Array.from(document.querySelectorAll('#tree li[data-file]'));
       all.forEach(el => el.classList.remove('flash'));
       const hit = all.find(el => normalizePath(el.dataset.file || '') === normalized);
       if (!hit) {
-        setStatus('Not found in tree.', 'info');
+        setStatus('Not found in tree or source.', 'info');
         return;
       }
       hit.classList.add('flash');
       hit.scrollIntoView({ behavior: 'smooth', block: 'center' });
       setTimeout(() => hit.classList.remove('flash'), 900);
+    }
+
+    // Ensure the source explorer has the directory path expanded and scroll/highlight the file item.
+    function ensureSourcePathVisible(path) {
+      const normalized = normalizePath(path);
+      if (!normalized) return null;
+      const items = Array.from(document.querySelectorAll('#source .source-item, #source .source-line'));
+      // Find matching file element by data-path
+      const hit = items.find(el => normalizePath(el.dataset.path || el.dataset.path || el.dataset.file || '') === normalized || normalizePath(el.dataset.path || el.dataset.file || '') === normalized);
+      if (!hit) return null;
+      // If this is an ASCII line (no nested children), simply mark and scroll
+      if (hit.classList && hit.classList.contains('source-line')) {
+        clearLocatedSource();
+        hit.classList.add('located');
+        hit.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // Install one-time global clear handlers so any user action clears .located
+        attachLocatedClearHandlers();
+        return hit;
+      }
+
+      // For the tree-like explorer, expand ancestor directories by triggering their twist toggle (simulate click on their row)
+      let parent = hit.parentElement;
+      while (parent && parent.id !== 'source') {
+        if (parent.classList && (parent.classList.contains('source-children') || parent.classList.contains('source-explorer'))) {
+          const prev = parent.previousElementSibling;
+          if (prev && prev.classList && prev.classList.contains('source-row') && prev.querySelector('.source-twist')) {
+            const twist = prev.querySelector('.source-twist');
+            if (twist && twist.textContent === '▸') prev.click();
+          }
+        }
+        parent = parent.parentElement;
+      }
+      // Now scroll the hit into view within the source panel and mark it as located (persist until next action)
+      clearLocatedSource();
+      hit.classList.add('located');
+      hit.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // Install one-time global clear handlers so any user action clears .located
+      attachLocatedClearHandlers();
+      return hit;
+    }
+
+    function clearLocatedSource() {
+      const prev = document.querySelectorAll('#source .source-item.located, #source .source-line.located');
+      prev && prev.forEach(el => el.classList.remove('located'));
+      // Remove any registered global handlers
+      if (Array.isArray(locatedClearHandlers) && locatedClearHandlers.length) {
+        for (const h of locatedClearHandlers) {
+          try { document.removeEventListener(h.event, h.fn, h.opts || false); } catch (e) { /* ignore */ }
+        }
+        locatedClearHandlers = [];
+      }
+    }
+
+    function attachLocatedClearHandlers() {
+      // Clear any existing handlers first to avoid duplicates
+      if (Array.isArray(locatedClearHandlers) && locatedClearHandlers.length) {
+        for (const h of locatedClearHandlers) {
+          try { document.removeEventListener(h.event, h.fn, h.opts || false); } catch (e) { /* ignore */ }
+        }
+        locatedClearHandlers = [];
+      }
+      const events = ['click', 'pointerdown', 'wheel', 'keydown', 'touchstart', 'contextmenu', 'focusin'];
+      locatedSuppressUntil = Date.now() + 160; // ignore immediate originating event
+      for (const ev of events) {
+        const fn = function one(e) {
+          if (Date.now() < locatedSuppressUntil) return;
+          clearLocatedSource();
+        };
+        // Use capture for click/pointerdown to catch early
+        const opts = (ev === 'click' || ev === 'pointerdown') ? true : false;
+        document.addEventListener(ev, fn, opts);
+        locatedClearHandlers.push({ event: ev, fn: fn, opts: opts });
+      }
+    }
+
+    function locateInSource(file) {
+      if (!file) return null;
+      const path = (file || '').replace(/^\.\//, '');
+      // Ensure source panel visible
+      showSource = true;
+      localStorage.setItem('page_tree_show_source', String(true));
+      applyPanelVisibility();
+      // Render may be synchronous; attempt to ensure the source DOM exists
+      // Try immediate lookup; if not found, wait a short delay for renderSource completion
+      let hit = ensureSourcePathVisible(path);
+      if (hit) return hit;
+      // If not found immediately, try re-render and retry after a tick
+      renderSource();
+      hit = ensureSourcePathVisible(path);
+      if (hit) return hit;
+      // Final attempt after small delay
+      setTimeout(() => ensureSourcePathVisible(path), 120);
+      return null;
+    }
+
+    // Locate and select the corresponding nav element in the tree for a given source file
+    function locateInTree(file, opts) {
+      opts = opts || {};
+      const normalized = normalizePath(file || '');
+      if (!normalized) return null;
+      const all = Array.from(document.querySelectorAll('#tree li[data-file]'));
+      all.forEach(el => el.classList.remove('flash'));
+
+      // Matching strategies in order:
+      // 1) exact normalized path
+      // 2) compare basenames
+      // 3) README/index mapping: if source is docs/foo/README.md, match nav file docs/foo.md or docs/foo/README.md or docs/foo/index.md
+      // 4) directory-level mapping: if nav has docs/foo/ then match docs/foo/README.md
+
+      const tryNormalize = p => normalizePath(p || '');
+      const basename = p => (String(p || '').split('/').pop() || '').toLowerCase();
+
+      let hit = all.find(el => tryNormalize(el.dataset.file) === normalized);
+      if (!hit) {
+          // 2) basename match but only when it yields a unique candidate
+          const name = basename(normalized);
+          if (name) {
+            const cand = all.filter(el => basename(el.dataset.file) === name);
+            if (cand.length === 1) hit = cand[0];
+          }
+      }
+      if (!hit) {
+        // 3) README/index mapping
+          const dir = normalized;
+        const altCandidates = [];
+        // if path ends with README.md or index.md, try both forms
+        const withoutFile = normalized.replace(/(?:readme|index)\.md$/i, '').replace(/\/$/, '');
+        if (withoutFile && withoutFile !== normalized) {
+          altCandidates.push(withoutFile + '.md');
+          altCandidates.push(withoutFile + '/README.md');
+          altCandidates.push(withoutFile + '/index.md');
+        }
+        // if path is a dir (no .md), try dir/README.md
+        if (!/\.md$/i.test(normalized)) {
+          altCandidates.push(normalized.replace(/\/$/, '') + '/README.md');
+          altCandidates.push(normalized.replace(/\/$/, '') + '/index.md');
+        }
+        // Try matching candidates exactly first
+        for (const c of altCandidates) {
+          const n = tryNormalize(c);
+          hit = all.find(el => tryNormalize(el.dataset.file) === n);
+          if (hit) break;
+        }
+        // If still not found and this is a README/index, try finding the folder's overview page via stateTree
+        if (!hit && /(?:readme|index)\.md$/i.test(normalized)) {
+          const folderSegment = dir.replace(/(?:readme|index)\.md$/i, '').replace(/\/$/, '');
+          // find folder node in stateTree by segment
+          function findFolderBySegment(seg, nodes) {
+            for (const n of (nodes || [])) {
+              if (!n) continue;
+              if (n.type === 'folder' && (n.segment || '') === seg) return n;
+              if (Array.isArray(n.children)) {
+                const f = findFolderBySegment(seg, n.children);
+                if (f) return f;
+              }
+            }
+            return null;
+          }
+          const folder = findFolderBySegment(folderSegment, stateTree);
+          if (folder) {
+            const overview = (Array.isArray(folder.children) ? folder.children : []).find(c => c && c.type === 'page' && c.is_overview);
+            if (overview && overview.id) {
+              const el = document.querySelector(`#tree li.node[data-id="${String(overview.id)}"]`);
+              if (el) hit = el;
+            }
+          }
+        }
+      }
+      if (!hit) return null;
+
+      // Select the node
+      const id = hit.dataset.id;
+      if (id) {
+        selectedId = id;
+        selectedIds = new Set([id]);
+        selectionAnchorId = id;
+        selectionParentKey = selectionKeyForId(id);
+        selectedDisplaySlotFolderId = '';
+        syncSelectionClasses();
+      }
+      // Flash and scroll
+      hit.classList.add('flash');
+      hit.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setTimeout(() => hit.classList.remove('flash'), 900);
+      // Also mark the source explorer item as located (persistent) if present
+      if (opts.markSourceLocated !== false) {
+        try { ensureSourcePathVisible(file); } catch (e) { /* ignore */ }
+      }
+      return hit;
+    }
+
+    // Find a node in stateTree by its file path, return {node, parent} or null
+    function findNodeByFile(file, nodes = stateTree, parent = null) {
+      const nfile = normalizePath(file || '');
+      for (const node of (nodes || [])) {
+        if (!node) continue;
+        if (node.type === 'page' && normalizePath(node.file || '') === nfile) return { node, parent };
+        if (node.type === 'folder' && Array.isArray(node.children)) {
+          const found = findNodeByFile(file, node.children, node);
+          if (found) return found;
+        }
+      }
+      return null;
+    }
+
+    // Find an overview page node by source path (README/index mapping), return node or null
+    function findOverviewBySourcePath(file) {
+      const nfile = normalizePath(file || '');
+      // Direct match to any overview page
+      function walk(nodes) {
+        for (const node of (nodes || [])) {
+          if (!node) continue;
+          if (node.type === 'page' && node.is_overview && normalizePath(node.file || '') === nfile) return node;
+          if (Array.isArray(node.children)) {
+            const found = walk(node.children);
+            if (found) return found;
+          }
+        }
+        return null;
+      }
+      const direct = walk(stateTree);
+      if (direct) return direct;
+      // If path ends with README.md or index.md, try matching by folder path
+      if (/(?:readme|index)\.md$/i.test(nfile)) {
+        const folderPath = nfile.replace(/(?:readme|index)\.md$/i, '').replace(/\/$/, '');
+        function walkFolder(nodes) {
+          for (const node of (nodes || [])) {
+            if (!node) continue;
+            if (node.type === 'folder') {
+              // check children for overview
+              const overview = (Array.isArray(node.children) ? node.children : []).find(c => c && c.type === 'page' && c.is_overview && normalizePath(c.file || '').startsWith(folderPath));
+              if (overview) return overview;
+            }
+            if (Array.isArray(node.children)) {
+              const found = walkFolder(node.children);
+              if (found) return found;
+            }
+          }
+          return null;
+        }
+        const byFolder = walkFolder(stateTree);
+        if (byFolder) return byFolder;
+      }
+      return null;
     }
 
     function normalizePath(path) {
@@ -1311,15 +1634,28 @@
     }
 
 	    function selectNode(id) {
+	      // Any selection change clears located highlight
+	      clearLocatedSource();
 	      selectedId = id || '';
 	      selectedIds = new Set(selectedId ? [selectedId] : []);
 	      selectionAnchorId = selectedId;
 	      selectionParentKey = selectionKeyForId(selectedId);
 	      selectedDisplaySlotFolderId = '';
 	      syncSelectionClasses();
+        // Scroll selection into view: prefer page li, otherwise overview slot
+        if (selectedId) {
+          const el = document.querySelector(`#tree li.node[data-id="${CSS.escape(selectedId)}"]`);
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            return;
+          }
+          const ov = document.querySelector(`#tree .overview-inline[data-overview-id="${CSS.escape(selectedId)}"]`);
+          if (ov) ov.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
 	    }
 
 	    function clearSelection() {
+	      clearLocatedSource();
 	      selectedId = '';
 	      selectedIds = new Set();
 	      selectionAnchorId = '';
@@ -1356,6 +1692,9 @@
       const isShift = !!(e && e.shiftKey);
       const key = selectionKeyForId(id);
       if (!id) return;
+
+      // Clear located highlight when user changes selection via mouse modifiers
+      clearLocatedSource();
 
       // First selection.
       if (!selectedIds || selectedIds.size === 0) {
@@ -1539,12 +1878,12 @@
 	            if ((selectedIds && selectedIds.has(overview.id)) || selectedId === overview.id) slot.classList.add('selected');
 	            value.textContent = `./${String(overview.file).replace(/^\.\//, '')}`;
 	            slot.title = value.textContent;
-	            slot.addEventListener('click', (e) => {
-	              e.stopPropagation();
-	              if (activeInlineEdit) return;
-	              selectedDisplaySlotFolderId = '';
-	              selectNode(overview.id);
-	            });
+              slot.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (activeInlineEdit) return;
+                selectedDisplaySlotFolderId = '';
+                selectNode(overview.id);
+              });
 	            slot.addEventListener('dblclick', (e) => {
 	              e.stopPropagation();
 	              if (activeInlineEdit) return;
