@@ -3,6 +3,9 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
+import subprocess
+import sys
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime
@@ -1002,6 +1005,37 @@ def _rename_path(old_path: Path, new_path: Path) -> None:
     old_path.rename(new_path)
 
 
+def _open_with_default_viewer(path: Path) -> None:
+    if sys.platform.startswith("darwin"):
+        subprocess.Popen(["open", str(path)])
+        return
+    if os.name == "nt":
+        os.startfile(str(path))  # type: ignore[attr-defined]
+        return
+    subprocess.Popen(["xdg-open", str(path)])
+
+
+def _open_with_vscode(path: Path) -> bool:
+    code = shutil.which("code")
+    if code:
+        subprocess.Popen([code, str(path)])
+        return True
+    if sys.platform.startswith("darwin"):
+        try:
+            subprocess.Popen(["open", "-a", "Visual Studio Code", str(path)])
+            return True
+        except FileNotFoundError:
+            return False
+    return False
+
+
+def _open_in_editor_or_default(path: Path) -> str:
+    if _open_with_vscode(path):
+        return "vscode"
+    _open_with_default_viewer(path)
+    return "default"
+
+
 @app.route("/api/rename_file", methods=["POST"])
 def api_rename_file():
     payload = request.get_json(silent=True) or {}
@@ -1393,6 +1427,81 @@ def api_create_page():
     file_path.write_text(body, encoding="utf-8")
     rel = file_path.relative_to(DOCS_ROOT).as_posix()
     return jsonify({"status": "ok", "file": rel})
+
+
+@app.route("/api/open_file", methods=["POST"])
+def api_open_file():
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return _json_error("Expected a JSON object.", 400)
+    file_rel = str(payload.get("file") or "").strip()
+    if not file_rel:
+        return _json_error("`file` is required.", 400)
+    try:
+        safe_rel = _safe_rel_path(file_rel)
+        if Path(safe_rel).suffix.lower() not in ALLOWED_DOC_EXTS:
+            return _json_error("Only markdown files can be opened.", 400)
+        abs_path = _safe_docs_path(safe_rel)
+    except Exception as exc:
+        return _json_error(str(exc), 400)
+    if not abs_path.exists() or not abs_path.is_file():
+        return _json_error("File not found.", 404)
+    try:
+        mode = _open_in_editor_or_default(abs_path)
+    except Exception as exc:
+        return _json_error(f"Open failed: {exc}", 500)
+    return jsonify({"status": "ok", "mode": mode})
+
+
+@app.route("/api/read_file", methods=["POST"])
+def api_read_file():
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return _json_error("Expected a JSON object.", 400)
+    file_rel = str(payload.get("file") or "").strip()
+    if not file_rel:
+        return _json_error("`file` is required.", 400)
+    try:
+        safe_rel = _safe_rel_path(file_rel)
+        if Path(safe_rel).suffix.lower() not in ALLOWED_DOC_EXTS:
+            return _json_error("Only markdown files can be read.", 400)
+        abs_path = _safe_docs_path(safe_rel)
+    except Exception as exc:
+        return _json_error(str(exc), 400)
+    if not abs_path.exists() or not abs_path.is_file():
+        return _json_error("File not found.", 404)
+    try:
+        content = abs_path.read_text(encoding="utf-8")
+    except Exception as exc:
+        return _json_error(f"Read failed: {exc}", 500)
+    return jsonify({"status": "ok", "file": safe_rel, "content": content})
+
+
+@app.route("/api/write_file", methods=["POST"])
+def api_write_file():
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return _json_error("Expected a JSON object.", 400)
+    file_rel = str(payload.get("file") or "").strip()
+    if not file_rel:
+        return _json_error("`file` is required.", 400)
+    content = payload.get("content")
+    if not isinstance(content, str):
+        return _json_error("`content` must be a string.", 400)
+    try:
+        safe_rel = _safe_rel_path(file_rel)
+        if Path(safe_rel).suffix.lower() not in ALLOWED_DOC_EXTS:
+            return _json_error("Only markdown files can be written.", 400)
+        abs_path = _safe_docs_path(safe_rel)
+    except Exception as exc:
+        return _json_error(str(exc), 400)
+    if not abs_path.exists() or not abs_path.is_file():
+        return _json_error("File not found.", 404)
+    try:
+        abs_path.write_text(content, encoding="utf-8")
+    except Exception as exc:
+        return _json_error(f"Write failed: {exc}", 500)
+    return jsonify({"status": "ok", "file": safe_rel})
 
 
 @app.route("/api/delete_dirs", methods=["POST"])

@@ -20,6 +20,7 @@
         <button id="toggle-source" type="button" class="ghost" data-help="Toggle Source panel">🗂</button>
         <button id="toggle-tree" type="button" class="ghost" data-help="Toggle Doc Tree panel">📚</button>
         <button id="toggle-info" type="button" class="ghost" data-help="Toggle Info panel">ℹ️</button>
+        <button id="toggle-simple-editor" type="button" class="ghost" data-help="simple md file editor">🧾</button>
         <button id="toggle-theme" type="button" class="ghost" data-help="Toggle theme (Day/Night)">🌙</button>
       </div>
     </header>
@@ -98,6 +99,8 @@
                 data-help="Create a page (nav only) and store it inside a same-named folder on disk">➕📄 Page w/ Folder</button>
               <button id="delete-btn" type="button" data-help="Delete selected node (tree only)">🗑️ Delete</button>
               <button id="tree-locate-btn" type="button" class="ghost" data-help="Locate selection in Source">📍 Locate</button>
+              <button id="open-file-btn" type="button" class="ghost" data-help="Open selected page in editor or default viewer">📖 Open</button>
+              <button id="simple-edit-btn" type="button" class="ghost" data-help="Open selected page in Simple Edit">🖋️ Edit</button>
             </div>
           </div>
           <div id="tree" class="list-shell">Loading...</div>
@@ -141,6 +144,36 @@
           <pre id="debug-log" class="debug-log"></pre>
         </section>
       </div>
+
+      <section class="card panel simple-editor" id="simple-editor" hidden>
+        <div class="card-head">
+          <h2>✏️ Simple Edit</h2>
+          <div class="inline-actions">
+            <span id="simple-edit-file" class="muted"></span>
+            <span id="simple-edit-diff" class="muted"></span>
+            <button id="simple-edit-abort" type="button" class="ghost" data-help="Abort edit (discard changes)">⟲ Abort</button>
+            <button id="simple-edit-save" type="button" class="ghost" data-help="Save file">💾 Save</button>
+            <button id="simple-edit-close" type="button" class="ghost" data-help="Close">✕</button>
+          </div>
+        </div>
+        <div class="simple-edit-body">
+          <pre id="simple-edit-lines" class="simple-edit-lines"></pre>
+          <pre id="simple-edit-highlight" class="simple-edit-highlight"></pre>
+          <textarea id="simple-edit-input" class="simple-edit-input" spellcheck="false"></textarea>
+        </div>
+      </section>
+
+      <div class="modal" id="modal" hidden>
+        <div class="modal-backdrop"></div>
+        <div class="modal-card" role="dialog" aria-modal="true">
+          <div class="modal-title" id="modal-title"></div>
+          <div class="modal-message" id="modal-message"></div>
+          <div class="modal-input-wrap" id="modal-input-wrap" hidden>
+            <input id="modal-input" class="modal-input" type="text" />
+          </div>
+          <div class="modal-actions" id="modal-actions"></div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -168,9 +201,14 @@
     let treeCollapsed = new Set();
     let treeMaxLevel = 'n';
     let toolTipEl = null;
+    let maybeLoadEditorFromSelection = () => {};
 		    let activeInlineEdit = null;
 		    let autoSyncTimer = null;
-		    let dragMode = 'sync_files'; // sync_files | nav_only
+    let showChoice = async () => 'cancel';
+    let showConfirm = async () => false;
+    let showPrompt = async () => null;
+    let showAlert = async () => {};
+    let dragMode = 'sync_files'; // sync_files | nav_only
 		    let selectedDisplaySlotFolderId = '';
 		    let showTools = false;
     let showSource = false;
@@ -226,8 +264,26 @@
         toggleSource: document.getElementById('toggle-source'),
         toggleTree: document.getElementById('toggle-tree'),
         toggleInfo: document.getElementById('toggle-info'),
+        toggleSimpleEditor: document.getElementById('toggle-simple-editor'),
         toggleTheme: document.getElementById('toggle-theme'),
         treeLocateBtn: document.getElementById('tree-locate-btn'),
+        openFileBtn: document.getElementById('open-file-btn'),
+        simpleEditBtn: document.getElementById('simple-edit-btn'),
+        simpleEditor: document.getElementById('simple-editor'),
+        simpleEditFile: document.getElementById('simple-edit-file'),
+        simpleEditDiff: document.getElementById('simple-edit-diff'),
+        simpleEditAbort: document.getElementById('simple-edit-abort'),
+        simpleEditSave: document.getElementById('simple-edit-save'),
+        simpleEditClose: document.getElementById('simple-edit-close'),
+        simpleEditLines: document.getElementById('simple-edit-lines'),
+        simpleEditHighlight: document.getElementById('simple-edit-highlight'),
+        simpleEditInput: document.getElementById('simple-edit-input'),
+        modal: document.getElementById('modal'),
+        modalTitle: document.getElementById('modal-title'),
+        modalMessage: document.getElementById('modal-message'),
+        modalInputWrap: document.getElementById('modal-input-wrap'),
+        modalInput: document.getElementById('modal-input'),
+        modalActions: document.getElementById('modal-actions'),
       };
 
 		      // Load mkdocs.yml from disk, overwrite current draft tree, and beautify nav formatting.
@@ -331,19 +387,481 @@
               if (overview && overview.file) return openAndLocate(overview.file);
             }
           }
-          return setStatus('No page selected to locate.', 'info');
+          return setStatus('⚠️ No page selected to locate.', 'info');
         }
 
         const found = findNode(stateTree, id);
-        if (!found) return setStatus('Selected node not in tree.', 'info');
+        if (!found) return setStatus('⚠️ Selected node not in tree.', 'info');
         const node = found.node;
         if (node.type === 'page' && node.file) return openAndLocate(node.file);
         if (node.type === 'folder') {
           const overview = (node.children || []).find(c => c && c.type === 'page' && c.is_overview && c.file);
           if (overview && overview.file) return openAndLocate(overview.file);
         }
-        setStatus('Selected node has no associated file to locate.', 'info');
+        setStatus('⚠️ Selected node has no associated file to locate.', 'info');
       });
+
+      function getFileForNode(node) {
+        if (!node) return '';
+        if (node.type === 'page' && node.file) return node.file;
+        if (node.type === 'folder') {
+          const overview = (node.children || []).find(c => c && c.type === 'page' && c.is_overview && c.file);
+          if (overview && overview.file) return overview.file;
+        }
+        return '';
+      }
+
+      function resolveSelectedFile(forcedId) {
+        let id = forcedId || selectedId || (selectedIds && selectedIds.size ? Array.from(selectedIds)[0] : '');
+        if (!id && selectedDisplaySlotFolderId) {
+          const found = findNode(stateTree, selectedDisplaySlotFolderId);
+          const file = found && found.node ? getFileForNode(found.node) : '';
+          if (file) id = found.node.id;
+        }
+        if (!id) return '';
+        const found = findNode(stateTree, id);
+        if (!found) return '';
+        return getFileForNode(found.node);
+      }
+
+      if (els.openFileBtn) els.openFileBtn.addEventListener('click', async () => {
+        let id = selectedId || (selectedIds && selectedIds.size ? Array.from(selectedIds)[0] : '');
+        const file = resolveSelectedFile(id);
+        if (!file) return setStatus('⚠️ No page selected to open.', 'info');
+        try {
+          const data = await fetchJson('/api/open_file', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ file })
+          });
+          const mode = data && data.mode ? data.mode : 'default';
+          setStatus(mode === 'vscode' ? '✅ Opened in VS Code.' : '☑️ Opened in default viewer.', 'success');
+        } catch (e) {
+          setStatus(e.message || 'Open failed.', 'error');
+        }
+      });
+
+      const editorState = {
+        currentFile: '',
+        dirty: false,
+        originalLines: []
+      };
+
+      const modalState = { resolve: null };
+
+      const closeModal = (value) => {
+        if (!modalState.resolve) return;
+        const resolve = modalState.resolve;
+        modalState.resolve = null;
+        if (els.modal) els.modal.hidden = true;
+        resolve(value);
+      };
+
+      showChoice = (options) => {
+        const opts = options || {};
+        const title = String(opts.title || 'Confirm');
+        const message = String(opts.message || '');
+        const buttons = Array.isArray(opts.buttons) ? opts.buttons : [];
+        const cancelValue = opts.cancelValue;
+        const hasInput = !!opts.input;
+        const defaultValue = opts.input && typeof opts.input.value === 'string' ? opts.input.value : '';
+        const placeholder = opts.input && typeof opts.input.placeholder === 'string' ? opts.input.placeholder : '';
+        return new Promise((resolve) => {
+          modalState.resolve = resolve;
+          if (els.modalTitle) els.modalTitle.textContent = title;
+          if (els.modalMessage) els.modalMessage.textContent = message;
+          if (els.modalInputWrap) {
+            els.modalInputWrap.hidden = !hasInput;
+          }
+          if (els.modalInput) {
+            if (hasInput) {
+              els.modalInput.value = defaultValue;
+              els.modalInput.placeholder = placeholder;
+            } else {
+              els.modalInput.value = '';
+              els.modalInput.placeholder = '';
+            }
+          }
+          if (els.modalActions) {
+            els.modalActions.innerHTML = '';
+            buttons.forEach((btn) => {
+              const b = document.createElement('button');
+              b.type = 'button';
+              b.textContent = btn.label;
+              if (btn.primary) b.classList.add('active');
+              if (btn.ghost) b.classList.add('ghost');
+              b.addEventListener('click', () => {
+                const inputValue = hasInput && els.modalInput ? els.modalInput.value : '';
+                closeModal({ value: btn.value, input: inputValue });
+              });
+              els.modalActions.appendChild(b);
+            });
+          }
+          if (els.modal) els.modal.hidden = false;
+          const primary = els.modalActions ? els.modalActions.querySelector('button.active') : null;
+          if (primary) primary.focus();
+          if (hasInput && els.modalInput) {
+            els.modalInput.focus();
+            els.modalInput.select();
+          }
+          const onKey = (e) => {
+            if (e.key === 'Escape' && modalState.resolve) {
+              closeModal({ value: cancelValue, input: hasInput && els.modalInput ? els.modalInput.value : '' });
+            }
+            if (e.key === 'Enter' && hasInput && primary && modalState.resolve) {
+              const inputValue = els.modalInput ? els.modalInput.value : '';
+              closeModal({ value: buttons.find(b => b.primary)?.value ?? cancelValue, input: inputValue });
+            }
+          };
+          const onBackdrop = (e) => {
+            if (!els.modal || !modalState.resolve) return;
+            if (e.target && e.target.classList && e.target.classList.contains('modal-backdrop')) {
+              closeModal({ value: cancelValue, input: hasInput && els.modalInput ? els.modalInput.value : '' });
+            }
+          };
+          window.addEventListener('keydown', onKey, { once: true });
+          if (els.modal) els.modal.addEventListener('click', onBackdrop, { once: true });
+        });
+      };
+
+      showConfirm = async (message, opts) => {
+        const options = opts || {};
+        const res = await showChoice({
+          title: options.title || 'Confirm',
+          message,
+          cancelValue: false,
+          buttons: [
+            { label: options.okText || 'OK', value: true, primary: true },
+            { label: options.cancelText || 'Cancel', value: false, ghost: true }
+          ]
+        });
+        return !!(res && res.value);
+      };
+
+      showAlert = async (message, opts) => {
+        const options = opts || {};
+        await showChoice({
+          title: options.title || 'Notice',
+          message,
+          cancelValue: true,
+          buttons: [{ label: options.okText || 'OK', value: true, primary: true }]
+        });
+      };
+
+      showPrompt = async (message, opts) => {
+        const options = opts || {};
+        const res = await showChoice({
+          title: options.title || 'Input',
+          message,
+          cancelValue: null,
+          input: {
+            value: options.defaultValue || '',
+            placeholder: options.placeholder || ''
+          },
+          buttons: [
+            { label: options.okText || 'OK', value: 'ok', primary: true },
+            { label: options.cancelText || 'Cancel', value: null, ghost: true }
+          ]
+        });
+        if (!res || res.value === null) return null;
+        return String(res.input || '');
+      };
+
+      function setSimpleEditorVisible(show) {
+        if (!els.simpleEditor) return;
+        els.simpleEditor.hidden = !show;
+        if (els.toggleSimpleEditor) {
+          if (show) els.toggleSimpleEditor.classList.add('active');
+          else els.toggleSimpleEditor.classList.remove('active');
+        }
+      }
+
+      async function confirmUnsavedClose() {
+        if (!editorState.dirty) return true;
+        return showConfirm('Unsaved changes in Simple Edit. Close without saving?', {
+          title: 'Unsaved Changes',
+          okText: 'Close',
+          cancelText: 'Cancel'
+        });
+      }
+
+      function escapeHtml(text) {
+        return String(text || '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
+      }
+
+      function highlightMarkdown(source) {
+        const lines = String(source || '').split('\n');
+        const out = lines.map((line, idx) => {
+          const escaped = escapeHtml(line);
+          let rendered = escaped;
+          const headingMatch = line.match(/^(\s{0,3})(#{1,6})\s+(.+)$/);
+          if (headingMatch) {
+            const lead = headingMatch[1] || '';
+            const hashes = headingMatch[2] || '';
+            const title = escapeHtml(headingMatch[3] || '');
+            rendered = `${lead}<span class="md-hash">${hashes}</span> <span class="md-heading">${title}</span>`;
+          } else {
+            rendered = rendered.replace(/\*\*([^*]+)\*\*/g, '<span class="md-bold">**$1**</span>');
+            rendered = rendered.replace(/`([^`]+)`/g, '<span class="md-code">`$1`</span>');
+            rendered = rendered.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<span class="md-link">[$1]($2)</span>');
+            rendered = rendered.replace(/^\s*[-*+]\s+/, (m) => `<span class="md-list">${m}</span>`);
+          }
+          const cls = 'md-line';
+          const body = rendered === '' ? '&nbsp;' : rendered;
+          return `<div class="${cls}">${body}</div>`;
+        });
+        if (!out.length) return '';
+        return out.join('');
+      }
+
+      function buildLineNumbers(lines, originals) {
+        const total = Math.max(lines.length, 1);
+        const out = [];
+        let added = 0;
+        let modified = 0;
+        for (let i = 0; i < total; i += 1) {
+          const no = i + 1;
+          const line = lines[i] ?? '';
+          const original = originals && typeof originals[i] === 'string' ? originals[i] : '';
+          const isNew = originals && i >= originals.length;
+          const isModified = !isNew && line !== original;
+          const cls = isNew ? 'line-no added' : (isModified ? 'line-no modified' : 'line-no');
+          const mark = isNew ? '+' : (isModified ? '~' : '');
+          if (isNew) added += 1;
+          if (isModified) modified += 1;
+          out.push(
+            `<div class="${cls}">` +
+            `<span class="line-no-mark">${mark}</span>` +
+            `<span class="line-no-label">${no}</span>` +
+            `</div>`
+          );
+        }
+        const deleted = originals && originals.length > lines.length ? originals.length - lines.length : 0;
+        return { html: out.join(''), added, modified, deleted };
+      }
+
+      function syncEditorHighlight() {
+        if (!els.simpleEditInput || !els.simpleEditHighlight) return;
+        const lines = String(els.simpleEditInput.value || '').split('\n');
+        const originals = Array.isArray(editorState.originalLines) ? editorState.originalLines : [];
+        els.simpleEditHighlight.innerHTML = highlightMarkdown(els.simpleEditInput.value);
+        if (els.simpleEditLines) {
+          const info = buildLineNumbers(lines, originals);
+          els.simpleEditLines.innerHTML = info.html;
+          if (els.simpleEditDiff) {
+            const add = info.added || 0;
+            const mod = info.modified || 0;
+            const del = info.deleted || 0;
+            els.simpleEditDiff.textContent = add || mod || del ? `+${add} ~${mod} -${del}` : '';
+          }
+        }
+      }
+
+      function syncEditorScroll() {
+        if (!els.simpleEditInput || !els.simpleEditHighlight) return;
+        els.simpleEditHighlight.scrollTop = els.simpleEditInput.scrollTop;
+        els.simpleEditHighlight.scrollLeft = els.simpleEditInput.scrollLeft;
+        if (els.simpleEditLines) els.simpleEditLines.scrollTop = els.simpleEditInput.scrollTop;
+      }
+
+      function updateEditorControls() {
+        if (els.simpleEditFile) els.simpleEditFile.textContent = editorState.currentFile || '(no file)';
+      }
+
+      async function loadEditorFile(file) {
+        if (!file) return;
+        try {
+          const data = await fetchJson('/api/read_file', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ file })
+          });
+          editorState.currentFile = data.file || file;
+          editorState.dirty = false;
+          editorState.originalLines = String(data.content || '').split('\n');
+          if (els.simpleEditInput) {
+            els.simpleEditInput.value = data.content || '';
+            syncEditorHighlight();
+            syncEditorScroll();
+          }
+          updateEditorControls();
+        } catch (e) {
+          setStatus(e.message || 'Failed to load file.', 'error');
+        }
+      }
+
+      async function saveSimpleEditor() {
+        if (!editorState.currentFile) {
+          setStatus('⚠️ No file loaded.', 'info');
+          return false;
+        }
+        try {
+          await fetchJson('/api/write_file', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ file: editorState.currentFile, content: els.simpleEditInput.value })
+          });
+          editorState.dirty = false;
+          editorState.originalLines = String(els.simpleEditInput.value || '').split('\n');
+          syncEditorHighlight();
+          setStatus('✅ Saved.', 'success');
+          return true;
+        } catch (e) {
+          setStatus(e.message || '⛔️ Save failed.', 'error');
+          return false;
+        }
+      }
+
+      const maybeLoadEditorFromSelectionImpl = async () => {
+        if (!els.simpleEditor || els.simpleEditor.hidden) return;
+        const file = resolveSelectedFile('');
+        if (!file || file === editorState.currentFile) return;
+        if (editorState.dirty) {
+          const choice = await showChoice({
+            title: 'Unsaved Changes',
+            message: 'You have unsaved changes. What would you like to do?',
+            cancelValue: 'cancel',
+            buttons: [
+              { label: 'Save', value: 'save', primary: true },
+              { label: 'Abort Edit', value: 'discard' },
+              { label: 'Cancel', value: 'cancel', ghost: true }
+            ]
+          });
+          const action = choice ? choice.value : 'cancel';
+          if (action === 'save') {
+            const ok = await saveSimpleEditor();
+            if (!ok) return;
+          } else if (action === 'discard') {
+            editorState.dirty = false;
+          } else {
+            setStatus('Switch canceled.', 'info');
+            return;
+          }
+        }
+        loadEditorFile(file);
+      };
+      maybeLoadEditorFromSelection = maybeLoadEditorFromSelectionImpl;
+
+      function openSimpleEditor(file) {
+        if (!els.simpleEditor) return;
+        setSimpleEditorVisible(true);
+        loadEditorFile(file);
+      }
+
+      if (els.simpleEditBtn) els.simpleEditBtn.addEventListener('click', () => {
+        const id = selectedId || (selectedIds && selectedIds.size ? Array.from(selectedIds)[0] : '');
+        if (!id && selectedDisplaySlotFolderId) {
+          const found = findNode(stateTree, selectedDisplaySlotFolderId);
+          const file = found && found.node ? getFileForNode(found.node) : '';
+          if (file) return openSimpleEditor(file);
+        }
+        if (!id) return setStatus('⚠️ No page selected to edit.', 'info');
+        const found = findNode(stateTree, id);
+        if (!found) return setStatus('⚠️ Selected node not in tree.', 'info');
+        const file = getFileForNode(found.node);
+        if (!file) return setStatus('⚠️ Selected node has no associated file to edit.', 'info');
+        openSimpleEditor(file);
+      });
+
+      if (els.simpleEditClose) els.simpleEditClose.addEventListener('click', async () => {
+        const ok = await confirmUnsavedClose();
+        if (!ok) return;
+        setSimpleEditorVisible(false);
+      });
+
+      if (els.simpleEditAbort) els.simpleEditAbort.addEventListener('click', async () => {
+        if (!editorState.currentFile) return setStatus('⚠️ No file loaded.', 'info');
+        if (editorState.dirty) {
+          const ok = await showConfirm('Discard changes and reload the file?', {
+            title: 'Abort Edit',
+            okText: 'Discard',
+            cancelText: 'Cancel'
+          });
+          if (!ok) return;
+        }
+        loadEditorFile(editorState.currentFile);
+      });
+
+      if (els.simpleEditSave) els.simpleEditSave.addEventListener('click', saveSimpleEditor);
+
+      if (els.simpleEditInput) {
+        els.simpleEditInput.addEventListener('input', () => {
+          editorState.dirty = true;
+          syncEditorHighlight();
+        });
+        els.simpleEditInput.addEventListener('scroll', syncEditorScroll);
+      }
+
+      window.addEventListener('beforeunload', (e) => {
+        if (!editorState.dirty) return;
+        e.preventDefault();
+        e.returnValue = '';
+      });
+
+      if (els.toggleSimpleEditor) els.toggleSimpleEditor.addEventListener('click', () => {
+        if (!els.simpleEditor) return;
+        const willShow = els.simpleEditor.hidden;
+        setSimpleEditorVisible(willShow);
+        if (!willShow) return;
+        if (editorState.currentFile) {
+          updateEditorControls();
+          return;
+        }
+        const id = selectedId || (selectedIds && selectedIds.size ? Array.from(selectedIds)[0] : '');
+        if (id) {
+          const found = findNode(stateTree, id);
+          if (found && found.node) {
+            const file = getFileForNode(found.node);
+            if (file) return openSimpleEditor(file);
+          }
+        }
+        setStatus('⚠️ Simple Edit opened. Select a page and click 🧾 Edit to load it.', 'info');
+      });
+
+      if (els.simpleEditor) {
+        const header = els.simpleEditor.querySelector('.card-head');
+        let drag = null;
+        const onMove = (e) => {
+          if (!drag || !els.simpleEditor) return;
+          const x = e.clientX - drag.offsetX;
+          const y = e.clientY - drag.offsetY;
+          const maxX = window.innerWidth - drag.width - 8;
+          const maxY = window.innerHeight - drag.height - 8;
+          const clampedX = Math.min(Math.max(x, 8), Math.max(8, maxX));
+          const clampedY = Math.min(Math.max(y, 8), Math.max(8, maxY));
+          els.simpleEditor.style.left = `${clampedX}px`;
+          els.simpleEditor.style.top = `${clampedY}px`;
+        };
+        const onUp = () => {
+          if (!drag) return;
+          window.removeEventListener('pointermove', onMove);
+          window.removeEventListener('pointerup', onUp);
+          drag = null;
+        };
+        if (header) {
+          header.addEventListener('pointerdown', (e) => {
+            if (e.button !== 0) return;
+            if (e.target && e.target.closest('button')) return;
+            if (!els.simpleEditor) return;
+            const rect = els.simpleEditor.getBoundingClientRect();
+            els.simpleEditor.style.left = `${rect.left}px`;
+            els.simpleEditor.style.top = `${rect.top}px`;
+            els.simpleEditor.style.right = 'auto';
+            els.simpleEditor.style.bottom = 'auto';
+            drag = {
+              offsetX: e.clientX - rect.left,
+              offsetY: e.clientY - rect.top,
+              width: rect.width,
+              height: rect.height
+            };
+            window.addEventListener('pointermove', onMove);
+            window.addEventListener('pointerup', onUp);
+          });
+        }
+      }
 
       window.addEventListener('keydown', (e) => {
         if (activeInlineEdit) return;
@@ -383,7 +901,7 @@
 		    }
 
 		    async function bootstrap() {
-		      setStatus('Loading mkdocs.yml...', 'info');
+		      setStatus('⏳ Loading mkdocs.yml...', 'info');
 		      try {
 		        const data = await fetchJson('/api/import', { method: 'POST' });
 		        stateTree = Array.isArray(data.tree) ? data.tree : [];
@@ -393,12 +911,12 @@
 		        renderTree();
 		        updateHistoryButtons();
 		        await loadSource();
-		        setStatus(warnings.length ? `Loaded with warnings (${warnings.length}).` : 'Loaded from mkdocs.yml.', warnings.length ? 'info' : 'success');
+		        setStatus(warnings.length ? `⚠️ Loaded with warnings (${warnings.length}).` : '✅ Loaded from mkdocs.yml.', warnings.length ? 'info' : 'success');
 		      } catch (e) {
 		        const data = e && e.data ? e.data : null;
 		        if (data && Array.isArray(data.errors)) {
 		          const count = data.errors.length;
-		          setStatus(`Import blocked: ${count} invalid/missing doc path(s).`, 'error');
+		          setStatus(`⛔️ Import blocked: ${count} invalid/missing doc path(s).`, 'error');
 		          pushDebug('import.blocked', { errors: data.errors });
 		          showImportErrors(data);
 		          if (els.tree) els.tree.textContent = 'Blocked: invalid mkdocs.yml paths.';
@@ -406,7 +924,7 @@
 		          clearSelection();
 		          return;
 		        }
-		        setStatus(e.message || 'Import failed.', 'error');
+		        setStatus(`⛔️ ${e.message || 'Import failed.'}`, 'error');
 		        if (els.tree) els.tree.textContent = 'Failed to load tree.';
 		      }
 		    }
@@ -615,6 +1133,14 @@
       const before = makeSnapshot(stateTree, dragMode);
       pushHistorySnapshot(before);
       mutator();
+      pushDebug('history.commit', { label });
+      persistHistory();
+    }
+
+    async function withHistoryAsync(label, mutator) {
+      const before = makeSnapshot(stateTree, dragMode);
+      pushHistorySnapshot(before);
+      await mutator();
       pushDebug('history.commit', { label });
       persistHistory();
     }
@@ -1026,7 +1552,8 @@
 
     async function loadState(options) {
       const reset = options && options.reset;
-      setStatus('Loading tree...', 'info');
+      const silentStatus = options && options.silentStatus;
+      if (!silentStatus) setStatus('Loading tree...', 'info');
       try {
         const data = await fetchJson('/api/state');
         stateTree = Array.isArray(data.tree) ? data.tree : [];
@@ -1036,10 +1563,10 @@
         ensureSelectedValid();
         renderTree();
         updateHistoryButtons();
-        setStatus('Tree loaded.', 'success');
+        if (!silentStatus) setStatus('🌳 Tree loaded.', 'success');
       } catch (e) {
         els.tree.textContent = 'Failed to load tree.';
-        setStatus(e.message || 'Failed to load tree.', 'error');
+        if (!silentStatus) setStatus(e.message || 'Failed to load tree.', 'error');
       }
     }
 
@@ -1058,7 +1585,12 @@
 	      const shouldConfirm = opts.confirm !== false;
 	      const shouldBeautify = opts.beautify === true;
 	      if (shouldConfirm) {
-	        if (!confirm('Import will overwrite current tree state. Continue?')) return;
+	        const ok = await showConfirm('Import will overwrite current tree state. Continue?', {
+            title: 'Import mkdocs.yml',
+            okText: 'Import',
+            cancelText: 'Cancel'
+          });
+	        if (!ok) return;
 	      }
 	      setStatus('Importing...', 'info');
 	      try {
@@ -1076,7 +1608,7 @@
 	          // Re-write mkdocs.yml nav with normalized 2-space indentation (nav block only; no file moves).
 	          pushDebug('import.beautify', {});
 	          await sync('nav_only', { confirm: false, silent: true });
-	          setStatus('Loaded and beautified mkdocs.yml nav.', 'success');
+	          setStatus('🖲️ Loaded and beautified mkdocs.yml nav.', 'success');
 	        }
 	      } catch (e) {
 	        const data = e && e.data ? e.data : null;
@@ -1134,7 +1666,12 @@
         const msg = mode === 'sync_files'
           ? 'This will move .md files (and sibling asset folders) on disk. Continue?'
           : 'This will write mkdocs.yml nav. Continue?';
-        if (!confirm(msg)) return;
+        const ok = await showConfirm(msg, {
+          title: mode === 'sync_files' ? 'Sync Files' : 'Sync Nav',
+          okText: 'Continue',
+          cancelText: 'Cancel'
+        });
+        if (!ok) return;
       }
       if (!silent) setStatus('Syncing...', 'info');
       try {
@@ -1148,7 +1685,7 @@
         const extra = moves.length ? ` moved:${moves.length}` : '';
         const warn = warnings.length ? ` warnings:${warnings.length}` : '';
         if (!silent) setStatus(`Sync ok.${extra}${warn}`, warnings.length ? 'info' : 'success');
-        await loadState({ reset: false });
+        await loadState({ reset: false, silentStatus: silent });
         await loadSource();
         lastPersistedSignature = treeSignature(stateTree);
       } catch (e) {
@@ -1156,7 +1693,7 @@
         if (data && Array.isArray(data.collisions) && data.collisions.length) {
           setStatus(`Sync blocked: file name conflict (${data.collisions.length}). No changes applied.`, 'error');
           pushDebug('sync.blocked', { collisions: data.collisions });
-          await loadState({ reset: true });
+          await loadState({ reset: true, silentStatus: silent });
           await loadSource();
           return;
         }
@@ -1685,6 +2222,7 @@
 	        if (slot) slot.classList.add('selected');
 	      }
 	      updateSelectionInfo();
+        maybeLoadEditorFromSelection();
 	    }
 
     function selectWithModifiers(id, e) {
@@ -2012,15 +2550,15 @@
       updateDropHintFromPointer(e.clientX, e.clientY);
     }
 
-	    function onTreeDrop(e) {
-	      if (!draggedId) return;
-	      e.preventDefault();
-	      pushDebug('drop.before', { draggedId, dropHint });
-	      applyDrop();
-	      clearDropVisual();
-	      renderTree();
-	      if (dragMode === 'nav_only') {
-	        scheduleNavOnly('drag.drop.nav_only');
+    async function onTreeDrop(e) {
+      if (!draggedId) return;
+      e.preventDefault();
+      pushDebug('drop.before', { draggedId, dropHint });
+      await applyDrop();
+      clearDropVisual();
+      renderTree();
+      if (dragMode === 'nav_only') {
+        scheduleNavOnly('drag.drop.nav_only');
 	      } else {
 	        scheduleDragFilesSync('drag.drop.files');
 	      }
@@ -2046,14 +2584,14 @@
 	          });
 	          const moves = Array.isArray(data.moves) ? data.moves : [];
 	          setStatus(`Drag synced.${moves.length ? ` moved:${moves.length}` : ''}`, 'success');
-	          await loadState({ reset: false });
+	          await loadState({ reset: false, silentStatus: true });
 	          await loadSource();
 	        } catch (e) {
 	          const data = e && e.data ? e.data : null;
 	          if (data && Array.isArray(data.collisions) && data.collisions.length) {
 	            setStatus(`Drag blocked: file conflict (${data.collisions.length}). No changes applied.`, 'error');
 	            pushDebug('drag.sync.blocked', { collisions: data.collisions });
-	            await loadState({ reset: true });
+	            await loadState({ reset: true, silentStatus: true });
 	            await loadSource();
 	            return;
 	          }
@@ -2135,7 +2673,7 @@
       });
     }
 
-    function applyDrop() {
+    async function applyDrop() {
       const { mode, targetId } = dropHint || {};
       if (!mode) return;
 
@@ -2163,24 +2701,24 @@
 
       if (mode === 'root') {
         pushDebug('drop.apply', { mode, targetId: '' });
-        withHistory('drop.root', () => moveNodes(ids, '', 'root'));
+        await withHistoryAsync('drop.root', () => moveNodes(ids, '', 'root'));
         setStatus('Moved.', 'success');
         return;
       }
       if (mode === 'inside') {
         pushDebug('drop.apply', { mode, targetId });
-        withHistory('drop.inside', () => moveNodes(ids, targetId, 'inside'));
+        await withHistoryAsync('drop.inside', () => moveNodes(ids, targetId, 'inside'));
         setStatus('Moved.', 'success');
         return;
       }
       if (mode === 'before' || mode === 'after') {
         pushDebug('drop.apply', { mode, targetId });
-        withHistory(`drop.${mode}`, () => moveNodes(ids, targetId, mode));
+        await withHistoryAsync(`drop.${mode}`, () => moveNodes(ids, targetId, mode));
         setStatus('Moved.', 'success');
       }
     }
 
-	    function moveNodes(ids, targetId, mode) {
+	    async function moveNodes(ids, targetId, mode) {
 	      const list = Array.from(new Set((ids || []).filter(Boolean)));
 	      if (!list.length) return;
 
@@ -2195,7 +2733,7 @@
 	        const ctxs = detachManyWithContext(list);
 	        const targetDir = targetFolderDirForMove('root', '');
 	        for (const ctx of ctxs) {
-	          if (!promptRenameForOverview(ctx, targetDir)) {
+	          if (!(await promptRenameForOverview(ctx, targetDir))) {
 	            restoreAll(ctxs);
 	            return;
 	          }
@@ -2212,7 +2750,7 @@
 	        const overviewIdx = targetInfo.node.children.findIndex(n => n && n.type === 'page' && n.is_overview);
 	        const targetDir = targetFolderDirForMove('inside', targetId);
 	        for (const ctx of ctxs) {
-	          if (!promptRenameForOverview(ctx, targetDir)) {
+	          if (!(await promptRenameForOverview(ctx, targetDir))) {
 	            restoreAll(ctxs);
 	            return;
 	          }
@@ -2238,7 +2776,7 @@
 	        }
 	        const targetDir = targetFolderDirForMove(mode, targetId);
 	        for (const ctx of ctxs) {
-	          if (!promptRenameForOverview(ctx, targetDir)) {
+	          if (!(await promptRenameForOverview(ctx, targetDir))) {
 	            restoreAll(ctxs);
 	            return;
 	          }
@@ -2340,10 +2878,15 @@
       return '';
     }
 
-    function promptRenameForOverview(ctx, targetDir) {
+    async function promptRenameForOverview(ctx, targetDir) {
       if (!ctx || !ctx.node || !ctx.node.is_overview) return true;
       const currentTitle = String(ctx.node.title || '').trim() || 'Overview';
-      const nextTitle = prompt('Moving a section overview page. Enter a new title (used for filename):', currentTitle);
+      const nextTitle = await showPrompt('Moving a section overview page. Enter a new title (used for filename):', {
+        title: 'Rename Overview',
+        okText: 'Rename',
+        cancelText: 'Cancel',
+        defaultValue: currentTitle
+      });
       if (nextTitle === null) return false;
       const trimmedTitle = String(nextTitle).trim() || currentTitle;
       const basename = buildBasenameFromInput(trimmedTitle);
@@ -2472,8 +3015,17 @@
 
 	    async function createNode(type) {
 	      const creatingDisplay = type === 'page' && !!selectedDisplaySlotFolderId;
-	      const title = creatingDisplay ? 'Overview' : prompt(type === 'folder' ? 'Section title:' : 'Page title:');
-	      if (!title || !title.trim()) return;
+	      const title = creatingDisplay
+	        ? 'Overview'
+	        : await showPrompt(type === 'folder' ? 'Section title:' : 'Page title:', {
+	          title: type === 'folder' ? 'New Section' : 'New Page',
+	          okText: 'Create',
+	          cancelText: 'Cancel'
+	        });
+	      if (!title || !title.trim()) {
+	        setStatus('⚠️ Title is required. Creation cancelled.', 'info');
+	        return;
+	      }
 
 	      const parentDir = (() => {
 	        if (selectedDisplaySlotFolderId) return folderDirForId(selectedDisplaySlotFolderId);
@@ -2584,14 +3136,21 @@
 	        setStatus(creatingDisplay ? 'Display page created.' : 'Page created on disk.', 'success');
 	        scheduleNavOnly(creatingDisplay ? 'create.display' : 'create.page');
 	      } catch (e) {
-	        setStatus(e.message || 'Create page failed.', 'error');
+	        setStatus(e.message || '⛔️ Create page failed.', 'error');
 	      }
 	    }
 
 	    async function createPageWithFolder() {
 	      if (activeInlineEdit) return;
-	      const title = prompt('Page title (folder + file will use the same name):');
-	      if (!title || !title.trim()) return;
+	      const title = await showPrompt('Page title (folder + file will use the same name):', {
+	        title: 'New Page + Folder',
+	        okText: 'Create',
+	        cancelText: 'Cancel'
+	      });
+	      if (!title || !title.trim()) {
+	        setStatus('⚠️ Title is required. Creation cancelled.', 'info');
+	        return;
+	      }
 	      const cleanTitle = title.trim();
 
 	      const parentDir = (() => {
@@ -2641,24 +3200,24 @@
 	        }
 	        renderTree();
 	        await loadSource();
-	        setStatus('Page + folder created on disk.', 'success');
+	        setStatus('✅ Page + folder created on disk.', 'success');
 	        scheduleNavOnly('create.page_with_folder');
 	      } catch (e) {
-	        setStatus(e.message || 'Create page + folder failed.', 'error');
+	        setStatus(e.message || '⛔️ Create page + folder failed.', 'error');
 	      }
 	    }
 
     function renameSelected() {
-      if (!selectedId) return setStatus('Select a node first.', 'info');
+      if (!selectedId) return setStatus('⚠️ Select a node first.', 'info');
       const rowTitle = document.querySelector(`#tree li[data-id="${selectedId}"] .node-title`);
-      if (!rowTitle) return setStatus('Selected node not visible (expand parent folders).', 'info');
+      if (!rowTitle) return setStatus('⚠️ Selected node not visible (expand parent folders).', 'info');
       beginInlineEdit(selectedId, 'title', rowTitle);
     }
 
     function beginInlineEdit(id, field, hostEl) {
       if (!id || !hostEl) return;
       const info = findNode(stateTree, id);
-      if (!info) return setStatus('Node not found.', 'error');
+      if (!info) return setStatus('⚠️ Node not found.', 'error');
 
       if (activeInlineEdit && activeInlineEdit.id === id && activeInlineEdit.field === field) return;
       if (activeInlineEdit) cancelInlineEdit();
@@ -2865,13 +3424,13 @@
 
     async function deleteSelected() {
       if ((!selectedId || !findNode(stateTree, selectedId)) && (!selectedIds || !selectedIds.size)) {
-        return setStatus('Select a node first.', 'info');
+        return setStatus('⚠️ Select a node first.', 'info');
       }
       const ids = selectedIds && selectedIds.size ? Array.from(selectedIds) : [selectedId];
       const folderCheck = classifyFoldersForDelete(ids);
       if (folderCheck.blocking.length) {
         const first = folderCheck.blocking[0];
-        return setStatus(`Cannot delete non-empty folder "${first.title}". Move its pages first.`, 'info');
+        return setStatus(`⚠️ Cannot delete non-empty folder "${first.title}". Move its pages first.`, 'info');
       }
 
       const filesToDelete = collectFilesForIds(ids);
@@ -2884,7 +3443,11 @@
         hasFiles ? `delete ${filesToDelete.length} page file(s) on disk` : null,
         hasDirs ? `delete ${dirsToDelete.length} empty folder(s) on disk` : null,
       ].filter(Boolean).join(', ') + '. Continue?';
-      const ok = confirm(summary);
+      const ok = await showConfirm(summary, {
+        title: 'Delete',
+        okText: 'Delete',
+        cancelText: 'Cancel'
+      });
       if (!ok) return;
       let removed = null;
       withHistory('delete', () => {
@@ -2985,7 +3548,7 @@
     async function deleteFilesOnDisk(files, options) {
       const opts = options || {};
       const deleteAssets = !!opts.deleteAssets;
-      setStatus('Deleting files...', 'info');
+      setStatus('🗑️ Deleting files...', 'info');
       try {
         const data = await fetchJson('/api/delete_files', {
           method: 'POST',
@@ -2994,17 +3557,17 @@
         });
         const deleted = Array.isArray(data.deleted) ? data.deleted : [];
         const errors = Array.isArray(data.errors) ? data.errors : [];
-        const msg = `Deleted ${deleted.length} item(s) from disk.${errors.length ? ` errors:${errors.length}` : ''}`;
+        const msg = `✅ Deleted ${deleted.length} item(s) from disk.${errors.length ? ` errors:${errors.length}` : ''}`;
         setStatus(msg, errors.length ? 'error' : 'success');
         await loadSource();
       } catch (e) {
-        setStatus(e.message || 'Delete files failed.', 'error');
+        setStatus(e.message || '⛔️ Delete files failed.', 'error');
       }
     }
 
     async function deleteDirsOnDisk(dirs) {
       if (!Array.isArray(dirs) || !dirs.length) return;
-      setStatus('Deleting empty folders...', 'info');
+      setStatus('🗑️ Deleting empty folders...', 'info');
       try {
         const data = await fetchJson('/api/delete_dirs', {
           method: 'POST',
@@ -3013,11 +3576,11 @@
         });
         const deleted = Array.isArray(data.deleted) ? data.deleted : [];
         const errors = Array.isArray(data.errors) ? data.errors : [];
-        const msg = `Deleted ${deleted.length} empty folder(s).${errors.length ? ` errors:${errors.length}` : ''}`;
+        const msg = `✅ Deleted ${deleted.length} empty folder(s).${errors.length ? ` errors:${errors.length}` : ''}`;
         setStatus(msg, errors.length ? 'error' : 'success');
         await loadSource();
       } catch (e) {
-        setStatus(e.message || 'Delete folders failed.', 'error');
+        setStatus(e.message || '⛔️ Delete folders failed.', 'error');
       }
     }
   </script>
