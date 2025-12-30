@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from shutil import copy2
+from string import Template
 from typing import Any, Iterable
 from uuid import uuid4
 
@@ -892,7 +893,26 @@ def _create_missing_page(file_rel: str, title: str) -> None:
     if path.exists():
         return
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(f"# {title.strip() or 'Untitled'}\n", encoding="utf-8")
+    if path.name.lower() == "readme.md":
+        section_name = path.parent.name or "Section"
+        path.write_text(_section_readme_template(section_name), encoding="utf-8")
+    else:
+        path.write_text(f"# {title.strip() or 'Untitled'}\n", encoding="utf-8")
+
+
+def _section_readme_template(section_name: str) -> str:
+    name = (section_name or "").strip() or "Section"
+    tpl = Template(
+        "# **$section**\n\n"
+        "> fill chapter introduction here\n\n"
+        "### **This chapter can be separated into below sections:**\n\n"
+        "{% for p in page.parent.children %}\n"
+        "{% if p.is_page and p.url and p.url != page.url %}\n"
+        "[{{ p.title }}]({{ '/' ~ p.url.lstrip('/') }})\n"
+        "{% endif %}\n"
+        "{% endfor %}\n"
+    )
+    return tpl.substitute(section=name)
 
 
 def _validate_imported_tree(nodes: list["Node"]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -1345,6 +1365,9 @@ def api_create_page():
     title = str(payload.get("title") or "").strip()
     if not title:
         return _json_error("Title is required.", 400)
+    content = payload.get("content")
+    if content is not None and not isinstance(content, str):
+        return _json_error("`content` must be a string.", 400)
     parent_dir = str(payload.get("parent_dir") or "").strip().strip("/")
     parent_path = DOCS_ROOT if not parent_dir else _safe_docs_path(parent_dir)
     if parent_path.exists() and not parent_path.is_dir():
@@ -1359,7 +1382,15 @@ def api_create_page():
         base = f"{base}.md"
     base = _unique_child_name(parent_path, base)
     file_path = parent_path / base
-    file_path.write_text(f"# {title.strip() or 'Untitled'}\n", encoding="utf-8")
+    if isinstance(content, str) and content.strip():
+        body = content
+    elif base.lower() == "readme.md":
+        section_title = str(payload.get("section_title") or "").strip()
+        section_name = section_title or Path(parent_dir).name or "Section"
+        body = _section_readme_template(section_name)
+    else:
+        body = f"# {title.strip() or 'Untitled'}\n"
+    file_path.write_text(body, encoding="utf-8")
     rel = file_path.relative_to(DOCS_ROOT).as_posix()
     return jsonify({"status": "ok", "file": rel})
 
