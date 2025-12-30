@@ -1846,8 +1846,7 @@
 	      if (!list.length) return;
 
 	      // Overview pages are special:
-	      // - They cannot be swapped/reordered within a section.
-	      // - If moved out of their section, they become normal pages.
+	      // - Moving them converts to a normal page and prompts for a title.
 	      const asNodes = list.map(id => {
 	        const found = findNode(stateTree, id);
 	        return found ? found.node : null;
@@ -1856,7 +1855,10 @@
 	      if (mode === 'root') {
 	        const ctxs = detachManyWithContext(list);
 	        for (const ctx of ctxs) {
-	          if (ctx.node && ctx.node.is_overview) ctx.node.is_overview = false;
+	          if (!promptRenameForOverview(ctx, 'root', 'root')) {
+	            restoreAll(ctxs);
+	            return;
+	          }
 	          stateTree.push(ctx.node);
 	        }
 	        return;
@@ -1866,10 +1868,13 @@
 	        const targetInfo = findNode(stateTree, targetId);
 	        if (!targetInfo || targetInfo.node.type !== 'folder') return;
 	        targetInfo.node.children = Array.isArray(targetInfo.node.children) ? targetInfo.node.children : [];
-	        const overviewIdx = targetInfo.node.children.findIndex(n => n && n.type === 'page' && n.is_overview);
 	        const ctxs = detachManyWithContext(list);
+	        const overviewIdx = targetInfo.node.children.findIndex(n => n && n.type === 'page' && n.is_overview);
 	        for (const ctx of ctxs) {
-	          if (ctx.node && ctx.node.is_overview) ctx.node.is_overview = false;
+	          if (!promptRenameForOverview(ctx, targetId, 'inside')) {
+	            restoreAll(ctxs);
+	            return;
+	          }
 	          if (overviewIdx >= 0) targetInfo.node.children.splice(overviewIdx + 1, 0, ctx.node);
 	          else targetInfo.node.children.push(ctx.node);
 	        }
@@ -1882,6 +1887,7 @@
 	        const targetInfo = findNode(stateTree, targetId);
 	        if (!targetInfo) return;
 	        const siblings = targetInfo.siblings;
+	        const targetParentId = targetInfo.parent ? targetInfo.parent.id : 'root';
 	        const idx = siblings.findIndex(n => n.id === targetId);
 	        if (idx < 0) return;
 	        let insertAt = mode === 'before' ? idx : idx + 1;
@@ -1891,11 +1897,9 @@
 	          insertAt = overviewAt + 1;
 	        }
 	        for (const ctx of ctxs) {
-	          if (ctx.node && ctx.node.is_overview) {
-	            // Prevent reordering overview within the same siblings list.
-	            // If it was detached, re-insert it at its original slot (front).
-	            siblings.splice(0, 0, ctx.node);
-	            continue;
+	          if (!promptRenameForOverview(ctx, targetParentId, mode)) {
+	            restoreAll(ctxs);
+	            return;
 	          }
 	          siblings.splice(insertAt, 0, ctx.node);
 	          insertAt += 1;
@@ -1943,7 +1947,7 @@
         if (idx < 0) continue;
         const parentKey = found.parent ? found.parent.id : 'root';
         if (!byParent.has(parentKey)) byParent.set(parentKey, []);
-        byParent.get(parentKey).push({ id, siblings: found.siblings, index: idx });
+        byParent.get(parentKey).push({ id, siblings: found.siblings, index: idx, parentId: parentKey });
       }
 
       // Detach in descending index per parent to keep indices valid.
@@ -1951,13 +1955,37 @@
         group.sort((a, b) => b.index - a.index);
         for (const item of group) {
           const node = item.siblings.splice(item.index, 1)[0];
-          contexts.push({ id: item.id, node, fromIndex: item.index });
+          contexts.push({
+            id: item.id,
+            node,
+            fromIndex: item.index,
+            index: item.index,
+            siblings: item.siblings,
+            parentId: item.parentId
+          });
         }
       }
 
       // Return in ascending original index order (stable visual order within parent).
       contexts.sort((a, b) => a.fromIndex - b.fromIndex);
       return contexts;
+    }
+
+    function promptRenameForOverview(ctx, targetParentId, mode) {
+      if (!ctx || !ctx.node || !ctx.node.is_overview) return true;
+      const current = String(ctx.node.title || '').trim();
+      const fallback = current || 'Overview';
+      const next = prompt('Moving a section overview page. Enter a new title:', fallback);
+      if (next === null) return false;
+      const trimmed = String(next).trim();
+      ctx.node.title = trimmed || fallback;
+      ctx.node.is_overview = false;
+      return true;
+    }
+
+    function restoreAll(ctxs) {
+      const sorted = Array.from(ctxs || []).sort((a, b) => (b.index || 0) - (a.index || 0));
+      sorted.forEach(restoreDetached);
     }
 
     function nodePath(id) {
