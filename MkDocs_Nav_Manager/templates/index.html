@@ -1534,15 +1534,22 @@
 	          value.className = 'overview-value';
 	          slot.appendChild(value);
 
-	          if (overview && overview.file) {
-	            slot.classList.add('has-overview');
-	            if ((selectedIds && selectedIds.has(overview.id)) || selectedId === overview.id) slot.classList.add('selected');
-	            value.textContent = `./${String(overview.file).replace(/^\.\//, '')}`;
-	            slot.title = value.textContent;
-	            slot.addEventListener('click', (e) => {
-	              e.stopPropagation();
-	              if (activeInlineEdit) return;
-	              selectedDisplaySlotFolderId = '';
+          if (overview && overview.file) {
+            slot.classList.add('has-overview');
+            slot.draggable = true;
+            slot.dataset.id = overview && overview.id ? String(overview.id) : '';
+            slot.dataset.type = 'page';
+            slot.dataset.title = overview && overview.title ? String(overview.title) : '';
+            slot.dataset.file = overview && overview.file ? String(overview.file) : '';
+            if ((selectedIds && selectedIds.has(overview.id)) || selectedId === overview.id) slot.classList.add('selected');
+            value.textContent = `./${String(overview.file).replace(/^\.\//, '')}`;
+            slot.title = value.textContent;
+            slot.addEventListener('dragstart', onDragStart);
+            slot.addEventListener('dragend', onDragEnd);
+            slot.addEventListener('click', (e) => {
+              e.stopPropagation();
+              if (activeInlineEdit) return;
+              selectedDisplaySlotFolderId = '';
 	              selectNode(overview.id);
 	            });
 	            slot.addEventListener('dblclick', (e) => {

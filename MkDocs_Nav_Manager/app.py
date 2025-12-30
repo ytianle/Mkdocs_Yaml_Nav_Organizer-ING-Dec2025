@@ -924,6 +924,26 @@ def _safe_docs_path(rel: str) -> Path:
     return path
 
 
+def _rename_path(old_path: Path, new_path: Path) -> None:
+    if old_path == new_path:
+        return
+    if new_path.exists():
+        try:
+            if old_path.samefile(new_path):
+                if old_path.name == new_path.name:
+                    return
+                tmp = old_path.parent / f".rename-{uuid4().hex}"
+                while tmp.exists():
+                    tmp = old_path.parent / f".rename-{uuid4().hex}"
+                old_path.rename(tmp)
+                tmp.rename(new_path)
+                return
+        except OSError:
+            pass
+        raise FileExistsError("Target already exists.")
+    old_path.rename(new_path)
+
+
 @app.route("/api/rename_file", methods=["POST"])
 def api_rename_file():
     payload = request.get_json(silent=True) or {}
@@ -957,11 +977,10 @@ def api_rename_file():
     docs = DOCS_ROOT.resolve()
     if docs not in new_path.parents and new_path != docs:
         return _json_error("Path escapes docs root.", 400)
-    if new_path.exists():
-        return _json_error("Target already exists.", 409)
-
     try:
-        old_path.rename(new_path)
+        _rename_path(old_path, new_path)
+    except FileExistsError:
+        return _json_error("Target already exists.", 409)
     except Exception as exc:
         return _json_error(f"Rename failed: {exc}", 500)
 
@@ -995,11 +1014,10 @@ def api_rename_dir():
     docs = DOCS_ROOT.resolve()
     if docs not in new_path.parents and new_path != docs:
         return _json_error("Path escapes docs root.", 400)
-    if new_path.exists():
-        return _json_error("Target already exists.", 409)
-
     try:
-        old_path.rename(new_path)
+        _rename_path(old_path, new_path)
+    except FileExistsError:
+        return _json_error("Target already exists.", 409)
     except Exception as exc:
         return _json_error(f"Rename failed: {exc}", 500)
 
