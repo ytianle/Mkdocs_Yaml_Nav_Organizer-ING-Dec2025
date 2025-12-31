@@ -67,7 +67,8 @@
 	                <span class="switch-track"></span>
 	                <span class="switch-text" id="drag-mode-text">Drag: Files</span>
 	              </label>
-	              <div class="segmented" role="group" aria-label="Depth limit">
+	              <button id="rainbow-toggle-btn" type="button" class="ghost" data-help="Toggle rainbow level colors">🌈</button>
+              <div class="segmented" role="group" aria-label="Depth limit">
 	                <button type="button" class="ghost depth-btn" data-depth="1" data-help="Show 1 level">1</button>
 	                <button type="button" class="ghost depth-btn" data-depth="2" data-help="Show 2 levels">2</button>
 	                <button type="button" class="ghost depth-btn" data-depth="3" data-help="Show 3 levels">3</button>
@@ -75,12 +76,12 @@
                 <button type="button" class="ghost depth-btn" data-depth="5" data-help="Show 5 levels">5</button>
                 <button type="button" class="ghost depth-btn" data-depth="n" data-help="Show all levels">∞</button>
               </div>
-              <button id="new-folder-btn" type="button" data-help="Create a new section under selection">➕📁 New
+              <button id="new-folder-btn" type="button" data-help="Create a new section under selection">➕🗂️ New
                 Section</button>
-              <button id="new-page-btn" type="button" data-help="Create a new page under selection">➕📄 New
+              <button id="new-page-btn" type="button" data-help="Create a new page under selection">➕📝 New
                 Page</button>
               <button id="new-page-with-folder-btn" type="button"
-                data-help="Create a page (nav only) and store it inside a same-named folder on disk">➕📄 Page w/ Folder</button>
+                data-help="Create a page (nav only) and store it inside a same-named folder on disk">➕📝 Page w/ Folder</button>
               <button id="delete-btn" type="button" data-help="Delete selected node (tree only)">🗑️ Delete</button>
               <button id="tree-locate-btn" type="button" class="ghost" data-help="Locate selection in Source">📍 Locate</button>
               <button id="open-file-btn" type="button" class="ghost" data-help="Open selected page in editor or default viewer">📖 Open</button>
@@ -250,6 +251,7 @@
         toggleInfo: document.getElementById('toggle-info'),
         toggleSimpleEditor: document.getElementById('toggle-simple-editor'),
         toggleTheme: document.getElementById('toggle-theme'),
+        rainbowToggleBtn: document.getElementById('rainbow-toggle-btn'),
         treeLocateBtn: document.getElementById('tree-locate-btn'),
         openFileBtn: document.getElementById('open-file-btn'),
         simpleEditBtn: document.getElementById('simple-edit-btn'),
@@ -349,6 +351,36 @@
         applyPanelVisibility();
       });
       if (els.toggleTheme) els.toggleTheme.addEventListener('click', toggleTheme);
+      if (els.rainbowToggleBtn) els.rainbowToggleBtn.addEventListener('click', toggleRainbowColors);
+
+      // Click tree panel background to deselect (go back to root)
+      els.tree.addEventListener('click', (e) => {
+        // Only trigger if clicking directly on tree container (not on children)
+        if (e.target === els.tree || e.target.classList.contains('tree-root')) {
+          selectedId = '';
+          selectedIds = new Set();
+          selectionAnchorId = '';
+          selectionParentKey = '';
+          selectedDisplaySlotFolderId = '';
+          syncSelectionClasses();
+          updateInfo();
+        }
+      });
+
+      // Click outside tree to deselect (go back to root)
+      document.addEventListener('click', (e) => {
+        // Check if click is outside tree panel
+        if (!els.tree.contains(e.target) && !els.panelTree.contains(e.target)) {
+          // Deselect all
+          selectedId = '';
+          selectedIds = new Set();
+          selectionAnchorId = '';
+          selectionParentKey = '';
+          selectedDisplaySlotFolderId = '';
+          syncSelectionClasses();
+          updateInfo();
+        }
+      });
 
       // Locate button in the Doc Tree header: locate selected page/overview in Source pane
       if (els.treeLocateBtn) els.treeLocateBtn.addEventListener('click', () => {
@@ -916,6 +948,13 @@
     function initTheme() {
       theme = localStorage.getItem('page_tree_theme') || 'dark';
       applyTheme();
+      
+      // Initialize rainbow colors state
+      const rainbowEnabled = localStorage.getItem('page_tree_rainbow_colors') === 'true';
+      document.body.classList.toggle('rainbow-colors', rainbowEnabled);
+      if (els.rainbowToggleBtn) {
+        els.rainbowToggleBtn.style.opacity = rainbowEnabled ? '1' : '0.5';
+      }
     }
 
     function toggleTheme() {
@@ -928,6 +967,15 @@
       document.body.classList.toggle('theme-light', theme === 'light');
       if (els.toggleTheme) els.toggleTheme.textContent = theme === 'light' ? '☀️' : '🌙';
       pushDebug('theme.set', { theme });
+    }
+
+    function toggleRainbowColors() {
+      const rainbowEnabled = document.body.classList.toggle('rainbow-colors');
+      localStorage.setItem('page_tree_rainbow_colors', rainbowEnabled ? 'true' : 'false');
+      if (els.rainbowToggleBtn) {
+        els.rainbowToggleBtn.style.opacity = rainbowEnabled ? '1' : '0.5';
+      }
+      pushDebug('rainbow.toggle', { enabled: rainbowEnabled });
     }
 
     function applyPanelVisibility() {
@@ -1729,7 +1777,7 @@
 
         const icon = document.createElement('span');
         icon.className = 'source-icon';
-        icon.textContent = isDir ? '📁' : '📄';
+        icon.textContent = isDir ? '🗂️' : '📝';
         row.appendChild(icon);
 
         const name = document.createElement('span');
@@ -2325,6 +2373,7 @@
         li.dataset.title = node.title || '';
         li.dataset.segment = node.segment || '';
         li.dataset.file = node.file || '';
+        li.dataset.depth = String(depth);
 
         if ((selectedIds && selectedIds.has(li.dataset.id)) || li.dataset.id === selectedId) li.classList.add('selected');
 
@@ -2360,7 +2409,7 @@
 
 	        const icon = document.createElement('span');
 	        icon.className = 'tree-icon';
-	        icon.textContent = isFolder ? '📚' : '📝';
+	        icon.textContent = isFolder ? '🗃️' : '🗒️';
 	        left.appendChild(icon);
 
 		        const title = document.createElement('span');

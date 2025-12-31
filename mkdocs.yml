@@ -8,6 +8,21 @@ nav:
     - Page 2: section1/page2.md
     - subsection:
       - section1/subsection/page3.md
+      - ss: section1/subsection/ss.md
+      - '23': section1/subsection/23.md
+      - 33r:
+        - section1/subsection/33r/README.md
+        - '33': section1/subsection/33r/33.md
+      - '2332':
+        - section1/subsection/2332/README.md
+        - '11': section1/subsection/2332/11.md
+        - '22':
+          - section1/subsection/2332/22/README.md
+          - '323': section1/subsection/2332/22/323.md
+          - '223': section1/subsection/2332/22/223.md
+          - ss:
+            - section1/subsection/2332/22/ss/README.md
+            - '222': section1/subsection/2332/22/ss/222.md
     - Page 1: section1/page1.md
   - Section 2:
     - section2/README.md
