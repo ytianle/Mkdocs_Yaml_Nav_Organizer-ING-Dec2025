@@ -425,106 +425,96 @@ body.theme-light #tree .node.dir {
 /* Level-based colors - Light theme (Rainbow) */
 /* Apply to whole section container for block structure */
 body.rainbow-colors.theme-light #tree .node.dir[data-depth="0"] {
-  background: rgb(255, 180, 180);
-  border-color: rgb(255, 160, 160);
+  background: rgb(255, 185, 185);
+  border-color: rgb(255, 165, 165);
 }
 
 body.rainbow-colors.theme-light #tree .node.dir[data-depth="1"] {
-  background: rgb(255, 200, 140);
-  border-color: rgb(255, 180, 120);
+  background: rgb(255, 210, 160);
+  border-color: rgb(255, 190, 140);
 }
 
 body.rainbow-colors.theme-light #tree .node.dir[data-depth="2"] {
-  background: rgb(255, 240, 140);
-  border-color: rgb(255, 220, 120);
+  background: rgb(195, 235, 195);
+  border-color: rgb(175, 220, 175);
 }
 
 body.rainbow-colors.theme-light #tree .node.dir[data-depth="3"] {
-  background: rgb(180, 240, 180);
-  border-color: rgb(160, 220, 160);
+  background: rgb(190, 220, 255);
+  border-color: rgb(170, 205, 245);
 }
 
 body.rainbow-colors.theme-light #tree .node.dir[data-depth="4"] {
-  background: rgb(180, 230, 255);
-  border-color: rgb(160, 210, 255);
-}
-
-body.rainbow-colors.theme-light #tree .node.dir[data-depth="5"] {
-  background: rgb(200, 180, 255);
-  border-color: rgb(180, 160, 255);
+  background: rgb(220, 200, 255);
+  border-color: rgb(200, 180, 245);
 }
 
 /* Section title row - slightly stronger color */
 body.rainbow-colors.theme-light #tree .node.dir[data-depth="0"] > .row {
-  background: rgb(255, 160, 160);
+  background: rgb(255, 165, 165);
 }
 
 body.rainbow-colors.theme-light #tree .node.dir[data-depth="1"] > .row {
-  background: rgb(255, 180, 120);
+  background: rgb(255, 190, 140);
 }
 
 body.rainbow-colors.theme-light #tree .node.dir[data-depth="2"] > .row {
-  background: rgb(255, 220, 120);
+  background: rgb(175, 220, 175);
 }
 
 body.rainbow-colors.theme-light #tree .node.dir[data-depth="3"] > .row {
-  background: rgb(160, 220, 160);
+  background: rgb(170, 205, 245);
 }
 
 body.rainbow-colors.theme-light #tree .node.dir[data-depth="4"] > .row {
-  background: rgb(160, 210, 255);
-}
-
-body.rainbow-colors.theme-light #tree .node.dir[data-depth="5"] > .row {
-  background: rgb(180, 160, 255);
+  background: rgb(200, 180, 245);
 }
 
 /* Page nodes - Light theme Rainbow colors */
 body.rainbow-colors.theme-light #tree .node.page[data-depth="0"] > .row {
-  background: rgb(255, 180, 180);
+  background: rgb(255, 185, 185);
 }
 
 body.rainbow-colors.theme-light #tree .node.page[data-depth="1"] > .row {
-  background: rgb(255, 200, 140);
+  background: rgb(255, 210, 160);
 }
 
 body.rainbow-colors.theme-light #tree .node.page[data-depth="2"] > .row {
-  background: rgb(255, 240, 140);
+  background: rgb(195, 235, 195);
 }
 
 body.rainbow-colors.theme-light #tree .node.page[data-depth="3"] > .row {
-  background: rgb(180, 240, 180);
+  background: rgb(190, 220, 255);
 }
 
 body.rainbow-colors.theme-light #tree .node.page[data-depth="4"] > .row {
-  background: rgb(180, 230, 255);
+  background: rgb(220, 200, 255);
 }
 
-body.rainbow-colors.theme-light #tree .node.page[data-depth="5"] > .row {
-  background: rgb(200, 180, 255);
-}
-
-/* Depth 6+ becomes gray in rainbow mode - Light theme */
+/* Depth 6+ (depth 5+) becomes gray in rainbow mode - Light theme */
+body.rainbow-colors.theme-light #tree .node.dir[data-depth="5"] ,
 body.rainbow-colors.theme-light #tree .node.dir[data-depth="6"] ,
 body.rainbow-colors.theme-light #tree .node.dir[data-depth="7"] ,
 body.rainbow-colors.theme-light #tree .node.dir[data-depth="8"] ,
 body.rainbow-colors.theme-light #tree .node.dir[data-depth="9"] {
-  background: rgb(200, 200, 210);
-  border-color: rgb(180, 180, 190);
+  background: rgb(210, 210, 220);
+  border-color: rgb(190, 190, 200);
 }
 
+body.rainbow-colors.theme-light #tree .node.dir[data-depth="5"] > .row,
 body.rainbow-colors.theme-light #tree .node.dir[data-depth="6"] > .row,
 body.rainbow-colors.theme-light #tree .node.dir[data-depth="7"] > .row,
 body.rainbow-colors.theme-light #tree .node.dir[data-depth="8"] > .row,
 body.rainbow-colors.theme-light #tree .node.dir[data-depth="9"] > .row {
-  background: rgb(180, 180, 190);
+  background: rgb(190, 190, 200);
 }
 
+body.rainbow-colors.theme-light #tree .node.page[data-depth="5"] > .row,
 body.rainbow-colors.theme-light #tree .node.page[data-depth="6"] > .row,
 body.rainbow-colors.theme-light #tree .node.page[data-depth="7"] > .row,
 body.rainbow-colors.theme-light #tree .node.page[data-depth="8"] > .row,
 body.rainbow-colors.theme-light #tree .node.page[data-depth="9"] > .row {
-  background: rgb(200, 200, 210);
+  background: rgb(210, 210, 220);
 }
 
 body.theme-light #tree .node.dir>ul {
@@ -705,11 +695,12 @@ body.theme-light .source-children {
 }
 
 /* Depth color indicators - Dark theme (Rainbow) - only show when rainbow is enabled */
-body.rainbow-colors .depth-btn[data-depth="1"]::before { background: rgba(220, 140, 60, 0.9); }
-body.rainbow-colors .depth-btn[data-depth="2"]::before { background: rgba(200, 180, 60, 0.9); }
-body.rainbow-colors .depth-btn[data-depth="3"]::before { background: rgba(80, 200, 100, 0.9); }
-body.rainbow-colors .depth-btn[data-depth="4"]::before { background: rgba(60, 180, 200, 0.9); }
-body.rainbow-colors .depth-btn[data-depth="5"]::before { background: rgba(120, 100, 220, 0.9); }
+body.rainbow-colors .depth-btn[data-depth="1"]::before { background: rgba(220, 70, 70, 0.9); }
+body.rainbow-colors .depth-btn[data-depth="2"]::before { background: rgba(230, 140, 60, 0.9); }
+body.rainbow-colors .depth-btn[data-depth="3"]::before { background: rgba(70, 180, 100, 0.9); }
+body.rainbow-colors .depth-btn[data-depth="4"]::before { background: rgba(70, 140, 210, 0.9); }
+body.rainbow-colors .depth-btn[data-depth="5"]::before { background: rgba(150, 110, 210, 0.9); }
+body.rainbow-colors .depth-btn[data-depth="n"]::before { background: rgba(140, 140, 150, 0.9); }
 
 body.rainbow-colors .depth-btn::before {
   content: '';
@@ -724,11 +715,12 @@ body.rainbow-colors .depth-btn::before {
 }
 
 /* Light theme depth indicators (Rainbow) - only show when rainbow is enabled */
-body.rainbow-colors.theme-light .depth-btn[data-depth="1"]::before { background: rgba(220, 140, 60, 0.95); }
-body.rainbow-colors.theme-light .depth-btn[data-depth="2"]::before { background: rgba(200, 180, 60, 0.95); }
-body.rainbow-colors.theme-light .depth-btn[data-depth="3"]::before { background: rgba(80, 200, 100, 0.95); }
-body.rainbow-colors.theme-light .depth-btn[data-depth="4"]::before { background: rgba(60, 180, 200, 0.95); }
-body.rainbow-colors.theme-light .depth-btn[data-depth="5"]::before { background: rgba(120, 100, 220, 0.95); }
+body.rainbow-colors.theme-light .depth-btn[data-depth="1"]::before { background: rgba(225, 80, 80, 0.95); }
+body.rainbow-colors.theme-light .depth-btn[data-depth="2"]::before { background: rgba(235, 150, 70, 0.95); }
+body.rainbow-colors.theme-light .depth-btn[data-depth="3"]::before { background: rgba(90, 190, 110, 0.95); }
+body.rainbow-colors.theme-light .depth-btn[data-depth="4"]::before { background: rgba(80, 150, 220, 0.95); }
+body.rainbow-colors.theme-light .depth-btn[data-depth="5"]::before { background: rgba(160, 120, 220, 0.95); }
+body.rainbow-colors.theme-light .depth-btn[data-depth="n"]::before { background: rgba(150, 150, 160, 0.95); }
 
 @media (max-width: 640px) {
   .toolbar {
@@ -1737,106 +1729,96 @@ body.theme-light .md-heading {
 /* Level-based colors - Dark theme (Rainbow) */
 /* Apply to whole section container for block structure */
 body.rainbow-colors #tree .node.dir[data-depth="0"] {
-  background: rgb(220, 80, 80);
-  border-color: rgb(220, 80, 80);
+  background: rgb(220, 70, 70);
+  border-color: rgb(220, 70, 70);
 }
 
 body.rainbow-colors #tree .node.dir[data-depth="1"] {
-  background: rgb(220, 140, 60);
-  border-color: rgb(220, 140, 60);
+  background: rgb(230, 140, 60);
+  border-color: rgb(230, 140, 60);
 }
 
 body.rainbow-colors #tree .node.dir[data-depth="2"] {
-  background: rgb(200, 180, 60);
-  border-color: rgb(200, 180, 60);
+  background: rgb(70, 180, 100);
+  border-color: rgb(70, 180, 100);
 }
 
 body.rainbow-colors #tree .node.dir[data-depth="3"] {
-  background: rgb(80, 200, 100);
-  border-color: rgb(80, 200, 100);
+  background: rgb(70, 140, 210);
+  border-color: rgb(70, 140, 210);
 }
 
 body.rainbow-colors #tree .node.dir[data-depth="4"] {
-  background: rgb(60, 180, 200);
-  border-color: rgb(60, 180, 200);
-}
-
-body.rainbow-colors #tree .node.dir[data-depth="5"] {
-  background: rgb(120, 100, 220);
-  border-color: rgb(120, 100, 220);
+  background: rgb(150, 110, 210);
+  border-color: rgb(150, 110, 210);
 }
 
 /* Section title row - slightly stronger color */
 body.rainbow-colors #tree .node.dir[data-depth="0"] > .row {
-  background: rgb(200, 60, 60);
+  background: rgb(200, 55, 55);
 }
 
 body.rainbow-colors #tree .node.dir[data-depth="1"] > .row {
-  background: rgb(200, 120, 40);
+  background: rgb(210, 120, 45);
 }
 
 body.rainbow-colors #tree .node.dir[data-depth="2"] > .row {
-  background: rgb(180, 160, 40);
+  background: rgb(55, 160, 85);
 }
 
 body.rainbow-colors #tree .node.dir[data-depth="3"] > .row {
-  background: rgb(60, 180, 80);
+  background: rgb(55, 125, 195);
 }
 
 body.rainbow-colors #tree .node.dir[data-depth="4"] > .row {
-  background: rgb(40, 160, 180);
-}
-
-body.rainbow-colors #tree .node.dir[data-depth="5"] > .row {
-  background: rgb(100, 80, 200);
+  background: rgb(130, 90, 190);
 }
 
 /* Page nodes - Rainbow colors for same depth as sections */
 body.rainbow-colors #tree .node.page[data-depth="0"] > .row {
-  background: rgb(220, 80, 80);
+  background: rgb(220, 70, 70);
 }
 
 body.rainbow-colors #tree .node.page[data-depth="1"] > .row {
-  background: rgb(220, 140, 60);
+  background: rgb(230, 140, 60);
 }
 
 body.rainbow-colors #tree .node.page[data-depth="2"] > .row {
-  background: rgb(200, 180, 60);
+  background: rgb(70, 180, 100);
 }
 
 body.rainbow-colors #tree .node.page[data-depth="3"] > .row {
-  background: rgb(80, 200, 100);
+  background: rgb(70, 140, 210);
 }
 
 body.rainbow-colors #tree .node.page[data-depth="4"] > .row {
-  background: rgb(60, 180, 200);
+  background: rgb(150, 110, 210);
 }
 
-body.rainbow-colors #tree .node.page[data-depth="5"] > .row {
-  background: rgb(120, 100, 220);
-}
-
-/* Depth 6+ becomes gray in rainbow mode - Dark theme */
+/* Depth 6+ (depth 5+) becomes gray in rainbow mode - Dark theme */
+body.rainbow-colors #tree .node.dir[data-depth="5"] ,
 body.rainbow-colors #tree .node.dir[data-depth="6"] ,
 body.rainbow-colors #tree .node.dir[data-depth="7"] ,
 body.rainbow-colors #tree .node.dir[data-depth="8"] ,
 body.rainbow-colors #tree .node.dir[data-depth="9"] {
-  background: rgb(100, 100, 110);
-  border-color: rgb(100, 100, 110);
+  background: rgb(105, 105, 115);
+  border-color: rgb(105, 105, 115);
 }
 
+body.rainbow-colors #tree .node.dir[data-depth="5"] > .row,
 body.rainbow-colors #tree .node.dir[data-depth="6"] > .row,
 body.rainbow-colors #tree .node.dir[data-depth="7"] > .row,
 body.rainbow-colors #tree .node.dir[data-depth="8"] > .row,
 body.rainbow-colors #tree .node.dir[data-depth="9"] > .row {
-  background: rgb(80, 80, 90);
+  background: rgb(85, 85, 95);
 }
 
+body.rainbow-colors #tree .node.page[data-depth="5"] > .row,
 body.rainbow-colors #tree .node.page[data-depth="6"] > .row,
 body.rainbow-colors #tree .node.page[data-depth="7"] > .row,
 body.rainbow-colors #tree .node.page[data-depth="8"] > .row,
 body.rainbow-colors #tree .node.page[data-depth="9"] > .row {
-  background: rgb(100, 100, 110);
+  background: rgb(105, 105, 115);
 }
 
 /* Pages keep simple uniform background when rainbow is OFF */
