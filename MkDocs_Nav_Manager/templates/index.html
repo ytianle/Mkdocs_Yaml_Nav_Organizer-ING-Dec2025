@@ -410,6 +410,8 @@
       treeCollapsed = new Set(JSON.parse(localStorage.getItem('page_tree_tree_collapsed') || '[]'));
       bindDepthButtons();
       updateDepthButtons();
+      if (els.tree) els.tree.addEventListener('scroll', () => persistScrollPosition('page_tree_scroll_tree', els.tree), { passive: true });
+      if (els.source) els.source.addEventListener('scroll', () => persistScrollPosition('page_tree_scroll_source', els.source), { passive: true });
 
       // Unified DnD handlers on the tree container (mouse-position detector).
       els.tree.addEventListener('dragover', onTreeDragOver);
@@ -1443,15 +1445,19 @@
       const level = parseInt(String(maxLevel), 10);
       if (!Number.isFinite(level) || level <= 0) return;
       const next = new Set();
-      const walk = (nodes, depth) => {
+      const walk = (nodes, depth, segs, titles) => {
         for (const node of (nodes || [])) {
           if (!node || node.type !== 'folder') continue;
-          const id = node.id ? String(node.id) : '';
-          if (id && depth >= level - 1) next.add(id);
-          if (Array.isArray(node.children)) walk(node.children, depth + 1);
+          const collapseKey = collapseKeyForNode(node, segs, titles);
+          if (collapseKey && depth >= level - 1) next.add(collapseKey);
+          const nextSegs = String((node.segment || '')).trim()
+            ? segs.concat([String(node.segment).trim()])
+            : segs;
+          const nextTitles = titles.concat([displayTitleForNode(node)]);
+          if (Array.isArray(node.children)) walk(node.children, depth + 1, nextSegs, nextTitles);
         }
       };
-      walk(stateTree, 0);
+      walk(stateTree, 0, [], []);
       treeCollapsed = next;
       persistTreeCollapsed();
     }
@@ -1484,6 +1490,19 @@
 
     function deepClone(value) {
       return JSON.parse(JSON.stringify(value));
+    }
+
+    function persistScrollPosition(key, el) {
+      if (!el || !key) return;
+      localStorage.setItem(key, String(el.scrollTop || 0));
+    }
+
+    function restoreScrollPosition(key, el) {
+      if (!el || !key) return;
+      const raw = localStorage.getItem(key);
+      const value = parseInt(String(raw || '0'), 10);
+      if (!Number.isFinite(value)) return;
+      el.scrollTop = value;
     }
 
     function treeSignature(tree) {
@@ -2133,9 +2152,11 @@
       els.source.innerHTML = '';
       if (!Array.isArray(sourceTree) || !sourceTree.length) {
         els.source.textContent = '(no markdown files found)';
+        restoreScrollPosition('page_tree_scroll_source', els.source);
         return;
       }
       els.source.appendChild(sourceView === 'ascii' ? buildSourceAscii(sourceTree) : buildSourceList(sourceTree));
+      restoreScrollPosition('page_tree_scroll_source', els.source);
     }
 
     function persistSourceCollapsed() {
@@ -2569,6 +2590,7 @@
         hint.textContent = '(empty)';
         els.tree.appendChild(hint);
       }
+      restoreScrollPosition('page_tree_scroll_tree', els.tree);
     }
 
     function updateSelectionInfo() {
@@ -2738,12 +2760,12 @@
       localStorage.setItem('page_tree_tree_collapsed', JSON.stringify(Array.from(treeCollapsed)));
     }
 
-    function toggleTreeDir(id) {
-      if (!id) return;
+    function toggleTreeDir(key) {
+      if (!key) return;
       lastDepthAction = '';
       updateDepthButtons();
-      if (treeCollapsed.has(id)) treeCollapsed.delete(id);
-      else treeCollapsed.add(id);
+      if (treeCollapsed.has(key)) treeCollapsed.delete(key);
+      else treeCollapsed.add(key);
       persistTreeCollapsed();
       renderTree();
     }
@@ -2765,7 +2787,20 @@
       return title;
     }
 
-	    function buildTreeList(nodes, isRoot = false, depth = 0) {
+    function collapseKeyForNode(node, parentSegs, parentTitles) {
+      if (!node || node.type !== 'folder') return '';
+      const seg = String((node.segment || '')).trim();
+      const missingAncestorSeg = (parentSegs || []).length !== (parentTitles || []).length;
+      if (seg && !missingAncestorSeg) {
+        const parts = parentSegs && parentSegs.length ? parentSegs.concat([seg]) : [seg];
+        return `dir:${parts.join('/')}`;
+      }
+      const title = displayTitleForNode(node);
+      const tparts = parentTitles && parentTitles.length ? parentTitles.concat([title]) : [title];
+      return `title:${tparts.join('/')}`;
+    }
+
+	    function buildTreeList(nodes, isRoot = false, depth = 0, parentSegs = [], parentTitles = []) {
 	      const ul = document.createElement('ul');
 	      ul.className = isRoot ? 'tree-root tree-explorer' : 'tree-children tree-explorer';
 	      for (const node of (nodes || [])) {
@@ -2796,13 +2831,14 @@
 	        const twist = document.createElement('span');
 	        twist.className = 'tree-twist';
 	        const isFolder = node.type === 'folder';
-	        const collapsed = isFolder && treeCollapsed.has(li.dataset.id);
+	        const collapseKey = isFolder ? collapseKeyForNode(node, parentSegs, parentTitles) : '';
+	        const collapsed = isFolder && collapseKey && treeCollapsed.has(collapseKey);
 	        const canExpand = isFolder;
 	        twist.textContent = isFolder ? (collapsed ? '▸' : '▾') : '';
         twist.addEventListener('click', (e) => {
           e.stopPropagation();
           if (!isFolder) return;
-          toggleTreeDir(li.dataset.id);
+          toggleTreeDir(collapseKey);
         });
 	        left.appendChild(twist);
 
@@ -2916,9 +2952,13 @@
 		          const children = Array.isArray(node.children) ? node.children : [];
 		          // Overview page is rendered in the header slot, not in the list.
 		          const rest = children.filter(c => !(c && c.type === 'page' && c.is_overview));
-		          const collapsed = treeCollapsed.has(li.dataset.id);
+		          const collapsed = collapseKey && treeCollapsed.has(collapseKey);
 		          if (!collapsed && canExpand) {
-		            li.appendChild(buildTreeList(rest, false, depth + 1));
+		            const nextSegs = String((node.segment || '')).trim()
+		              ? parentSegs.concat([String(node.segment).trim()])
+		              : parentSegs;
+		            const nextTitles = parentTitles.concat([displayTitleForNode(node)]);
+		            li.appendChild(buildTreeList(rest, false, depth + 1, nextSegs, nextTitles));
 		          } else {
 	            // Keep an empty children container so folder still shows as a folder
 	            // but without large nested blocks.
