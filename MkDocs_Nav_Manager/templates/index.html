@@ -408,6 +408,7 @@
       els.sourceViewBtn.addEventListener('click', toggleSourceView);
       updateSourceViewButton();
       treeCollapsed = new Set(JSON.parse(localStorage.getItem('page_tree_tree_collapsed') || '[]'));
+      normalizeTreeCollapsed();
       bindDepthButtons();
       updateDepthButtons();
       if (els.tree) els.tree.addEventListener('scroll', () => persistScrollPosition('page_tree_scroll_tree', els.tree), { passive: true });
@@ -2758,6 +2759,18 @@
 
     function persistTreeCollapsed() {
       localStorage.setItem('page_tree_tree_collapsed', JSON.stringify(Array.from(treeCollapsed)));
+    }
+
+    function normalizeTreeCollapsed() {
+      const next = new Set();
+      for (const key of treeCollapsed) {
+        if (typeof key !== 'string') continue;
+        if (key.startsWith('dir:') || key.startsWith('title:')) next.add(key);
+      }
+      if (next.size !== treeCollapsed.size) {
+        treeCollapsed = next;
+        persistTreeCollapsed();
+      }
     }
 
     function toggleTreeDir(key) {
