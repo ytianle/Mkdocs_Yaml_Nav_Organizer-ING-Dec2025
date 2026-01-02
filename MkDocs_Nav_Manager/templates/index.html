@@ -553,14 +553,16 @@
         const inEditorControl = target && target.closest
           ? target.closest('#toggle-simple-editor, #simple-edit-btn, #simple-edit-save, #simple-edit-abort, #simple-edit-close')
           : null;
+        const inModal = els.modal && !els.modal.hidden && els.modal.contains(target);
         // Check if click is outside tree panel and not part of the simple editor flow
-        if (!inTree && !inEditor && !inEditorControl) {
+        if (!inTree && !inEditor && !inEditorControl && !inModal) {
           // Deselect all
           selectedId = '';
           selectedIds = new Set();
           selectionAnchorId = '';
           selectionParentKey = '';
           selectedDisplaySlotFolderId = '';
+          selectionClearedManual = true;
           syncSelectionClasses();
           if (typeof updateInfo === 'function') updateInfo();
         }
