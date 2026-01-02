@@ -141,13 +141,13 @@
 	                  <path d="M6.5 10a1.5 1.5 0 0 1 3 0" stroke="#6AA9FF" stroke-width="1.5" stroke-linecap="round"/>
 	                </svg>
 	              </button>
-              <div class="segmented" role="group" aria-label="Depth limit">
-	                <button type="button" class="ghost depth-btn" data-depth="1" data-help="Show 1 level">1</button>
-	                <button type="button" class="ghost depth-btn" data-depth="2" data-help="Show 2 levels">2</button>
-	                <button type="button" class="ghost depth-btn" data-depth="3" data-help="Show 3 levels">3</button>
-                <button type="button" class="ghost depth-btn" data-depth="4" data-help="Show 4 levels">4</button>
-                <button type="button" class="ghost depth-btn" data-depth="5" data-help="Show 5 levels">5</button>
-                <button type="button" class="ghost depth-btn" data-depth="n" data-help="Show all levels">∞</button>
+              <div class="segmented" role="group" aria-label="Depth actions">
+	                <button type="button" class="ghost depth-btn" data-depth="1" data-help="Collapse to 1 level">1</button>
+	                <button type="button" class="ghost depth-btn" data-depth="2" data-help="Collapse to 2 levels">2</button>
+	                <button type="button" class="ghost depth-btn" data-depth="3" data-help="Collapse to 3 levels">3</button>
+                <button type="button" class="ghost depth-btn" data-depth="4" data-help="Collapse to 4 levels">4</button>
+                <button type="button" class="ghost depth-btn" data-depth="5" data-help="Collapse to 5 levels">5</button>
+                <button type="button" class="ghost depth-btn" data-depth="n" data-help="Expand all / collapse to last depth">∞</button>
               </div>
               <button id="new-folder-btn" type="button" data-help="Create a new section under selection" data-shortcut="Opt(Alt)+Shift+N">
                 🗂️ New Section
@@ -284,7 +284,8 @@
     let historyFuture = [];
     let lastPersistedSignature = '';
     let treeCollapsed = new Set();
-    let treeMaxLevel = 'n';
+    let lastDepthAction = '';
+    let lastDepthValue = 5;
     let toolTipEl = null;
     let maybeLoadEditorFromSelection = () => {};
 		    let activeInlineEdit = null;
@@ -407,7 +408,6 @@
       els.sourceViewBtn.addEventListener('click', toggleSourceView);
       updateSourceViewButton();
       treeCollapsed = new Set(JSON.parse(localStorage.getItem('page_tree_tree_collapsed') || '[]'));
-      treeMaxLevel = localStorage.getItem('page_tree_tree_max_level') || 'n';
       bindDepthButtons();
       updateDepthButtons();
 
@@ -1262,14 +1262,14 @@
 		      setStatus('⏳ Loading mkdocs.yml...', 'info');
 		      try {
 		        const data = await fetchJson('/api/import', { method: 'POST' });
-		        stateTree = Array.isArray(data.tree) ? data.tree : [];
-		        const warnings = Array.isArray(data.warnings) ? data.warnings : [];
-		        lastPersistedSignature = treeSignature(stateTree);
-		        resetHistory();
-		        renderTree();
-		        updateHistoryButtons();
-		        await loadSource();
-		        setStatus(warnings.length ? `⚠️ Loaded with warnings (${warnings.length}).` : '✅ Loaded from mkdocs.yml.', warnings.length ? 'info' : 'success');
+	        stateTree = Array.isArray(data.tree) ? data.tree : [];
+	        const warnings = Array.isArray(data.warnings) ? data.warnings : [];
+	        lastPersistedSignature = treeSignature(stateTree);
+	        resetHistory();
+	        renderTree();
+	        updateHistoryButtons();
+	        await loadSource();
+	        setStatus(warnings.length ? `⚠️ Loaded with warnings (${warnings.length}).` : '✅ Loaded from mkdocs.yml.', warnings.length ? 'info' : 'success');
 		      } catch (e) {
 		        const data = e && e.data ? e.data : null;
 		        if (data && Array.isArray(data.errors)) {
@@ -1415,8 +1415,17 @@
       const buttons = document.querySelectorAll('.depth-btn');
       buttons.forEach(btn => {
         btn.addEventListener('click', () => {
-          treeMaxLevel = btn.dataset.depth || 'n';
-          localStorage.setItem('page_tree_tree_max_level', treeMaxLevel);
+          const depth = btn.dataset.depth || 'n';
+          if (depth === 'n') {
+            toggleExpandAll();
+          } else {
+            const maxLevel = parseInt(String(depth), 10);
+            if (Number.isFinite(maxLevel) && maxLevel > 0) {
+              lastDepthValue = maxLevel;
+              applyDepthLimitToCollapsed(maxLevel);
+              lastDepthAction = String(maxLevel);
+            }
+          }
           updateDepthButtons();
           renderTree();
         });
@@ -1426,14 +1435,44 @@
     function updateDepthButtons() {
       const buttons = document.querySelectorAll('.depth-btn');
       buttons.forEach(btn => {
-        btn.classList.toggle('active', (btn.dataset.depth || '') === String(treeMaxLevel));
+        btn.classList.toggle('active', (btn.dataset.depth || '') === String(lastDepthAction || ''));
       });
     }
 
-    function maxLevelValue() {
-      if (treeMaxLevel === 'n') return Number.POSITIVE_INFINITY;
-      const n = parseInt(String(treeMaxLevel), 10);
-      return Number.isFinite(n) && n > 0 ? n : Number.POSITIVE_INFINITY;
+    function applyDepthLimitToCollapsed(maxLevel) {
+      const level = parseInt(String(maxLevel), 10);
+      if (!Number.isFinite(level) || level <= 0) return;
+      const next = new Set();
+      const walk = (nodes, depth) => {
+        for (const node of (nodes || [])) {
+          if (!node || node.type !== 'folder') continue;
+          const id = node.id ? String(node.id) : '';
+          if (id && depth >= level - 1) next.add(id);
+          if (Array.isArray(node.children)) walk(node.children, depth + 1);
+        }
+      };
+      walk(stateTree, 0);
+      treeCollapsed = next;
+      persistTreeCollapsed();
+    }
+
+    function toggleExpandAll() {
+      const baseDepth = parseInt(String(lastDepthValue || 5), 10);
+      const targetDepth = Number.isFinite(baseDepth) && baseDepth > 0 ? baseDepth : 5;
+      if (String(lastDepthAction || '') === String(targetDepth)) {
+        treeCollapsed = new Set();
+        persistTreeCollapsed();
+        lastDepthAction = 'n';
+        return;
+      }
+      if (String(lastDepthAction || '') === 'n') {
+        applyDepthLimitToCollapsed(targetDepth);
+        lastDepthAction = String(targetDepth);
+        return;
+      }
+      treeCollapsed = new Set();
+      persistTreeCollapsed();
+      lastDepthAction = 'n';
     }
 
     function updateSourceViewButton() {
@@ -2701,6 +2740,8 @@
 
     function toggleTreeDir(id) {
       if (!id) return;
+      lastDepthAction = '';
+      updateDepthButtons();
       if (treeCollapsed.has(id)) treeCollapsed.delete(id);
       else treeCollapsed.add(id);
       persistTreeCollapsed();
@@ -2711,8 +2752,15 @@
       const title = String((node && node.title) || '').trim();
       if (!title) return '(untitled)';
       if (title.includes('/') || title.includes('\\')) {
-        const parts = title.replace(/\\/g, '/').split('/');
-        return parts[parts.length - 1] || title;
+        const looksLikePath = /[\\/]/.test(title) && (
+          /(^|\/|\.)\.\.\//.test(title) ||
+          title.includes('./') ||
+          /\.[a-z0-9]{1,6}$/i.test(title)
+        );
+        if (looksLikePath) {
+          const parts = title.replace(/\\/g, '/').split('/');
+          return parts[parts.length - 1] || title;
+        }
       }
       return title;
     }
@@ -2749,16 +2797,11 @@
 	        twist.className = 'tree-twist';
 	        const isFolder = node.type === 'folder';
 	        const collapsed = isFolder && treeCollapsed.has(li.dataset.id);
-	        const allowedByDepth = (depth + 2) <= maxLevelValue();
-	        const canExpand = isFolder && allowedByDepth;
+	        const canExpand = isFolder;
 	        twist.textContent = isFolder ? (collapsed ? '▸' : '▾') : '';
         twist.addEventListener('click', (e) => {
           e.stopPropagation();
           if (!isFolder) return;
-          if (!canExpand) {
-            setStatus(`Depth limited to ${treeMaxLevel === 'n' ? '∞' : treeMaxLevel} levels.`, 'info');
-            return;
-          }
           toggleTreeDir(li.dataset.id);
         });
 	        left.appendChild(twist);
