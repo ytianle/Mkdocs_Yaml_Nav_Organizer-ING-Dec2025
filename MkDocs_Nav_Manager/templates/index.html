@@ -159,6 +159,10 @@
                 data-help="Create a page (nav only) and store it inside a same-named folder on disk" data-shortcut="Opt(Alt)+Shift+P">
                 📁 Page w/ Folder
               </button>
+              <button id="normalize-names-btn" type="button" class="ghost"
+                data-help="Rename files/dirs by depth (1-2 UPPER, 3 Title_Case, 4+ lower; skip HOME/JOURNAL)">
+                🔤 Normalize Files
+              </button>
               <button id="delete-btn" type="button" data-help="Delete selected node (tree only)" data-shortcut="Del/Backspace">
                 🗑️ Delete
               </button>
@@ -342,6 +346,7 @@
         newFolderBtn: document.getElementById('new-folder-btn'),
         newPageBtn: document.getElementById('new-page-btn'),
         newPageWithFolderBtn: document.getElementById('new-page-with-folder-btn'),
+        normalizeNamesBtn: document.getElementById('normalize-names-btn'),
         deleteBtn: document.getElementById('delete-btn'),
         toolUndoBtn: document.getElementById('tool-undo'),
 	        toolRedoBtn: document.getElementById('tool-redo'),
@@ -395,6 +400,7 @@
       els.newFolderBtn.addEventListener('click', () => createNode('folder'));
       els.newPageBtn.addEventListener('click', () => createNode('page'));
       if (els.newPageWithFolderBtn) els.newPageWithFolderBtn.addEventListener('click', createPageWithFolder);
+      if (els.normalizeNamesBtn) els.normalizeNamesBtn.addEventListener('click', normalizeTreeNames);
       els.deleteBtn.addEventListener('click', deleteSelected);
 	      els.toolUndoBtn.addEventListener('click', undo);
 	      els.toolRedoBtn.addEventListener('click', redo);
@@ -3657,6 +3663,39 @@
       return `${slugifyFileBase(name)}.md`;
     }
 
+    function titleTokens(text) {
+      const cleaned = String(text || '').trim().replace(/['"]+/g, '');
+      const tokens = cleaned.split(/[^0-9A-Za-z]+/g).filter(Boolean);
+      return tokens;
+    }
+
+    function formatNameByDepth(title, depth, fallbackWord) {
+      const tokens = titleTokens(title);
+      const style = depth <= 2 ? 'upper' : (depth === 3 ? 'title' : 'lower');
+      const seed = tokens.length ? tokens : [String(fallbackWord || 'item')];
+      if (style === 'upper') return seed.map(t => t.toUpperCase()).join('_');
+      if (style === 'title') {
+        return seed.map(t => (t ? t[0].toUpperCase() + t.slice(1).toLowerCase() : '')).join('_');
+      }
+      return seed.map(t => t.toLowerCase()).join('_');
+    }
+
+    function fileExtForNode(node) {
+      const name = String(node && node.file ? node.file : '').split('/').pop() || '';
+      const lower = name.toLowerCase();
+      if (lower.endsWith('.markdown')) return '.markdown';
+      if (lower.endsWith('.mdx')) return '.mdx';
+      if (lower.endsWith('.md')) return '.md';
+      return '.md';
+    }
+
+    function overviewBasenameForNode(node) {
+      const name = String(node && node.file ? node.file : '').split('/').pop() || '';
+      const lower = name.toLowerCase();
+      if (lower === 'readme.md' || lower === 'index.md') return name || 'README.md';
+      return 'README.md';
+    }
+
     function targetFolderDirForMove(mode, targetId) {
       if (mode === 'root') return '';
       if (mode === 'inside') return folderDirForId(targetId);
@@ -4031,6 +4070,55 @@
       const rowTitle = document.querySelector(`#tree li[data-id="${selectedId}"] .node-title`);
       if (!rowTitle) return setStatus('⚠️ Selected node not visible (expand parent folders).', 'info');
       beginInlineEdit(selectedId, 'title', rowTitle);
+    }
+
+    function isProtectedTitle(title) {
+      const upper = String(title || '').trim().toUpperCase();
+      return upper === 'HOME' || upper === 'JOURNAL';
+    }
+
+    async function normalizeTreeNames() {
+      if (!Array.isArray(stateTree) || !stateTree.length) {
+        setStatus('No doc tree loaded to normalize.', 'info');
+        return;
+      }
+      const ok = await showConfirm(
+        'This will rename files and folders on disk based on the YAML nav titles (keys stay the same). HOME and JOURNAL are skipped. Continue?',
+        { title: 'Normalize Files', okText: 'Rename Files', cancelText: 'Cancel' }
+      );
+      if (!ok) return;
+
+      const beforeTree = deepClone(stateTree);
+      const beforeFileMap = buildFileMap(beforeTree);
+
+      withHistory('normalize.names', () => {
+        const walk = (nodes, depth, parentSegments) => {
+          for (const node of (nodes || [])) {
+            if (!node) continue;
+            if (node.type === 'folder') {
+              if (isProtectedTitle(node.title)) continue;
+              const seg = formatNameByDepth(node.title, depth, 'section');
+              if (node.segment !== seg) node.segment = seg;
+              const nextSegments = parentSegments.concat(seg);
+              walk(node.children || [], depth + 1, nextSegments);
+            } else if (node.type === 'page') {
+              if (isProtectedTitle(node.title)) continue;
+              const base = node.is_overview
+                ? overviewBasenameForNode(node)
+                : `${formatNameByDepth(node.title, depth, 'page')}${fileExtForNode(node)}`;
+              const rel = parentSegments.length ? `${parentSegments.join('/')}/${base}` : base;
+              if (node.file !== rel) node.file = rel;
+            }
+          }
+        };
+        walk(stateTree, 1, []);
+      });
+
+      applyFilePrevFromCurrent(stateTree, beforeFileMap);
+      renderTree();
+      updateHistoryButtons();
+      setStatus('Normalizing and syncing files...', 'info');
+      await sync('sync_files', { confirm: false, silent: false });
     }
 
     function beginInlineEdit(id, field, hostEl) {
