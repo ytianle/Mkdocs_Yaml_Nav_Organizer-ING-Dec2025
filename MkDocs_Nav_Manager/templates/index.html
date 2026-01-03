@@ -3740,26 +3740,21 @@
       return `${slugifyFileBase(name)}.md`;
     }
 
-    function titleTokens(text) {
-      let cleaned = String(text || '').trim().replace(/['"]+/g, '');
+    function normalizeTitleToSnake(text, fallbackWord) {
+      let cleaned = String(text || '').normalize('NFKC').trim();
       cleaned = cleaned.replace(/c\+\+/gi, ' cpp ');
       cleaned = cleaned.replace(/c#/gi, ' csharp ');
       cleaned = cleaned.replace(/\+\+/g, ' plus plus ');
       cleaned = cleaned.replace(/\+/g, ' plus ');
       cleaned = cleaned.replace(/#/g, ' sharp ');
-      const tokens = cleaned.split(/[^0-9A-Za-z]+/g).filter(Boolean);
-      return tokens;
+      cleaned = cleaned.replace(/[^\p{L}\p{N}_]+/gu, '_');
+      cleaned = cleaned.replace(/_+/g, '_').replace(/^_+|_+$/g, '');
+      if (!cleaned) return String(fallbackWord || 'item').toLowerCase();
+      return cleaned.toLowerCase();
     }
 
     function formatNameByDepth(title, depth, fallbackWord) {
-      const tokens = titleTokens(title);
-      const style = depth <= 2 ? 'upper' : (depth === 3 ? 'title' : 'lower');
-      const seed = tokens.length ? tokens : [String(fallbackWord || 'item')];
-      if (style === 'upper') return seed.map(t => t.toUpperCase()).join('_');
-      if (style === 'title') {
-        return seed.map(t => (t ? t[0].toUpperCase() + t.slice(1).toLowerCase() : '')).join('_');
-      }
-      return seed.map(t => t.toLowerCase()).join('_');
+      return normalizeTitleToSnake(title, fallbackWord);
     }
 
     function fileExtForNode(node) {
