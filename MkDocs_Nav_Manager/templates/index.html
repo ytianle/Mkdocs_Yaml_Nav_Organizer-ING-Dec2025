@@ -4191,8 +4191,15 @@
               const currentRel = String(node.file || '').replace(/^\.\//, '');
               const slashAt = currentRel.lastIndexOf('/');
               const currentDir = slashAt >= 0 ? currentRel.slice(0, slashAt) : '';
+              const currentDirParts = currentDir ? currentDir.split('/').filter(Boolean) : [];
               const parentDir = parentSegments.join('/');
-              const targetDir = currentDir || parentDir;
+              let targetDir = parentDir;
+              if (currentDirParts.length) {
+                const tail = currentDirParts.length > parentSegments.length
+                  ? currentDirParts.slice(parentSegments.length)
+                  : [];
+                targetDir = parentDir && tail.length ? `${parentDir}/${tail.join('/')}` : (parentDir || currentDir);
+              }
               const rel = targetDir ? `${targetDir}/${base}` : base;
               if (node.file !== rel) node.file = rel;
             }
