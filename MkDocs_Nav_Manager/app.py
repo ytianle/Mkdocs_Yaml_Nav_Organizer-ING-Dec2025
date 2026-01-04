@@ -1092,19 +1092,19 @@ def api_rename_file():
     old_file = str(payload.get("old_file") or "").strip()
     new_basename = str(payload.get("new_basename") or "").strip()
     if not old_file:
-        return _json_error("`old_file` is required.", 400)
+        return _json_error("`old_file` is required.", 400, old_file=old_file)
     if not new_basename:
-        return _json_error("`new_basename` is required.", 400)
+        return _json_error("`new_basename` is required.", 400, old_file=old_file, new_basename=new_basename)
     if "/" in new_basename or "\\" in new_basename:
-        return _json_error("Filename must not include directories.", 400)
+        return _json_error("Filename must not include directories.", 400, old_file=old_file, new_basename=new_basename)
 
     old_rel = _safe_rel_path(old_file)
     try:
         old_path = _safe_docs_path(old_rel)
     except Exception as exc:
-        return _json_error(str(exc), 400)
+        return _json_error(str(exc), 400, old_file=old_file, new_basename=new_basename)
     if not old_path.exists() or not old_path.is_file():
-        return _json_error("Old file not found.", 404)
+        return _json_error("Old file not found.", 404, old_file=old_file, new_basename=new_basename)
 
     # Keep extension unless user specifies one.
     base = new_basename
@@ -1116,13 +1116,13 @@ def api_rename_file():
     new_path = (old_path.parent / base).resolve()
     docs = DOCS_ROOT.resolve()
     if docs not in new_path.parents and new_path != docs:
-        return _json_error("Path escapes docs root.", 400)
+        return _json_error("Path escapes docs root.", 400, old_file=old_file, new_basename=new_basename)
     try:
         _rename_path(old_path, new_path)
     except FileExistsError:
-        return _json_error("Target already exists.", 409)
+        return _json_error("Target already exists.", 409, old_file=old_file, new_basename=new_basename)
     except Exception as exc:
-        return _json_error(f"Rename failed: {exc}", 500)
+        return _json_error(f"Rename failed: {exc}", 500, old_file=old_file, new_basename=new_basename)
 
     return jsonify({"status": "ok", "file": new_path.relative_to(DOCS_ROOT).as_posix()})
 
@@ -1135,31 +1135,31 @@ def api_rename_dir():
     dir_rel = str(payload.get("dir") or "").strip().strip("/")
     new_segment = str(payload.get("new_segment") or "").strip().strip("/")
     if not dir_rel:
-        return _json_error("`dir` is required.", 400)
+        return _json_error("`dir` is required.", 400, dir=dir_rel)
     if not new_segment:
-        return _json_error("`new_segment` is required.", 400)
+        return _json_error("`new_segment` is required.", 400, dir=dir_rel, new_segment=new_segment)
     if "/" in new_segment or "\\" in new_segment:
-        return _json_error("Invalid segment.", 400)
+        return _json_error("Invalid segment.", 400, dir=dir_rel, new_segment=new_segment)
 
     old_rel = _safe_rel_path(dir_rel)
     try:
         old_path = _safe_docs_path(old_rel)
     except Exception as exc:
-        return _json_error(str(exc), 400)
+        return _json_error(str(exc), 400, dir=dir_rel, new_segment=new_segment)
     if not old_path.exists() or not old_path.is_dir():
-        return _json_error("Directory not found.", 404)
+        return _json_error("Directory not found.", 404, dir=dir_rel, new_segment=new_segment)
 
     parent = old_path.parent
     new_path = (parent / new_segment).resolve()
     docs = DOCS_ROOT.resolve()
     if docs not in new_path.parents and new_path != docs:
-        return _json_error("Path escapes docs root.", 400)
+        return _json_error("Path escapes docs root.", 400, dir=dir_rel, new_segment=new_segment)
     try:
         _rename_path(old_path, new_path)
     except FileExistsError:
-        return _json_error("Target already exists.", 409)
+        return _json_error("Target already exists.", 409, dir=dir_rel, new_segment=new_segment)
     except Exception as exc:
-        return _json_error(f"Rename failed: {exc}", 500)
+        return _json_error(f"Rename failed: {exc}", 500, dir=dir_rel, new_segment=new_segment)
 
     return jsonify(
         {
@@ -1168,6 +1168,81 @@ def api_rename_dir():
             "dir": new_path.relative_to(DOCS_ROOT).as_posix(),
         }
     )
+
+
+@app.route("/api/preflight_renames", methods=["POST"])
+def api_preflight_renames():
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return _json_error("Expected a JSON object.", 400)
+    dirs = payload.get("dirs") if isinstance(payload.get("dirs"), list) else []
+    files = payload.get("files") if isinstance(payload.get("files"), list) else []
+
+    errors: list[dict[str, Any]] = []
+    seen_targets: set[str] = set()
+
+    for item in dirs:
+        if not isinstance(item, dict):
+            continue
+        dir_rel = str(item.get("dir") or "").strip().strip("/")
+        new_segment = str(item.get("new_segment") or "").strip().strip("/")
+        if not dir_rel or not new_segment:
+            errors.append({"type": "invalid_dir_plan", "dir": dir_rel, "new_segment": new_segment})
+            continue
+        if "/" in new_segment or "\\" in new_segment:
+            errors.append({"type": "invalid_segment", "dir": dir_rel, "new_segment": new_segment})
+            continue
+        try:
+            old_path = _safe_docs_path(_safe_rel_path(dir_rel))
+        except Exception as exc:
+            errors.append({"type": "invalid_dir_path", "dir": dir_rel, "new_segment": new_segment, "error": str(exc)})
+            continue
+        if not old_path.exists() or not old_path.is_dir():
+            errors.append({"type": "missing_dir", "dir": dir_rel, "new_segment": new_segment})
+            continue
+        new_path = (old_path.parent / new_segment).resolve()
+        rel_target = new_path.relative_to(DOCS_ROOT).as_posix()
+        if rel_target in seen_targets:
+            errors.append({"type": "duplicate_target", "target": rel_target, "dir": dir_rel, "new_segment": new_segment})
+            continue
+        seen_targets.add(rel_target)
+        if new_path.exists() and not _same_file_path(old_path, new_path):
+            errors.append({"type": "target_exists", "target": rel_target, "dir": dir_rel, "new_segment": new_segment})
+
+    for item in files:
+        if not isinstance(item, dict):
+            continue
+        old_file = str(item.get("old_file") or "").strip()
+        new_basename = str(item.get("new_basename") or "").strip()
+        if not old_file or not new_basename:
+            errors.append({"type": "invalid_file_plan", "old_file": old_file, "new_basename": new_basename})
+            continue
+        if "/" in new_basename or "\\" in new_basename:
+            errors.append({"type": "invalid_basename", "old_file": old_file, "new_basename": new_basename})
+            continue
+        try:
+            old_path = _safe_docs_path(_safe_rel_path(old_file))
+        except Exception as exc:
+            errors.append({"type": "invalid_file_path", "old_file": old_file, "new_basename": new_basename, "error": str(exc)})
+            continue
+        if not old_path.exists() or not old_path.is_file():
+            errors.append({"type": "missing_file", "old_file": old_file, "new_basename": new_basename})
+            continue
+        base = new_basename
+        if "." not in Path(base).name:
+            base = f"{base}{old_path.suffix}"
+        if old_path.suffix.lower() == ".md" and not base.lower().endswith(".md"):
+            base = f"{base}.md"
+        new_path = (old_path.parent / base).resolve()
+        rel_target = new_path.relative_to(DOCS_ROOT).as_posix()
+        if rel_target in seen_targets:
+            errors.append({"type": "duplicate_target", "target": rel_target, "old_file": old_file, "new_basename": new_basename})
+            continue
+        seen_targets.add(rel_target)
+        if new_path.exists() and not _same_file_path(old_path, new_path):
+            errors.append({"type": "target_exists", "target": rel_target, "old_file": old_file, "new_basename": new_basename})
+
+    return jsonify({"status": "ok", "errors": errors})
 
 
 @app.route("/api/create_page_with_folder", methods=["POST"])

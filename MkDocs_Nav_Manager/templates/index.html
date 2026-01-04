@@ -4166,48 +4166,165 @@
       if (!ok) return;
 
       const beforeTree = deepClone(stateTree);
-      const beforeFileMap = buildFileMap(beforeTree);
 
-      withHistory('normalize.names', () => {
-        const walk = (nodes, depth, parentSegments) => {
-          for (const node of (nodes || [])) {
-            if (!node) continue;
-            if (node.type === 'folder') {
-              if (isProtectedTitle(node.title)) continue;
-              const seg = formatNameByDepth(node.title, depth, 'section');
-              if (node.segment !== seg) node.segment = seg;
-              const nextSegments = parentSegments.concat(seg);
-              walk(node.children || [], depth + 1, nextSegments);
-            } else if (node.type === 'page') {
-              if (isProtectedTitle(node.title)) continue;
-              const base = node.is_overview
-                ? overviewBasenameForNode(node)
-                : `${formatNameByDepth(node.title, depth, 'page')}${fileExtForNode(node)}`;
-              const currentRel = String(node.file || '').replace(/^\.\//, '');
-              const slashAt = currentRel.lastIndexOf('/');
-              const currentDir = slashAt >= 0 ? currentRel.slice(0, slashAt) : '';
-              const currentDirParts = currentDir ? currentDir.split('/').filter(Boolean) : [];
-              const parentDir = parentSegments.join('/');
-              let targetDir = parentDir;
-              if (currentDirParts.length) {
-                const tail = currentDirParts.length > parentSegments.length
-                  ? currentDirParts.slice(parentSegments.length)
-                  : [];
-                targetDir = parentDir && tail.length ? `${parentDir}/${tail.join('/')}` : (parentDir || currentDir);
-              }
-              const rel = targetDir ? `${targetDir}/${base}` : base;
-              if (node.file !== rel) node.file = rel;
+      const folderPlans = [];
+      const pagePlans = [];
+      const planErrors = [];
+      const plannedDirOlds = new Set();
+      const plannedDirNews = new Set();
+
+      const planWalk = (nodes, depth, parentSegments) => {
+        for (const node of (nodes || [])) {
+          if (!node) continue;
+          if (node.type === 'folder') {
+            if (isProtectedTitle(node.title)) continue;
+            const seg = formatNameByDepth(node.title, depth, 'section');
+            const oldDir = folderDirForId(node.id);
+            if (seg && node.segment !== seg) {
+              folderPlans.push({ id: node.id, oldDir, newSeg: seg, depth: parentSegments.length });
+            }
+            const nextSegments = parentSegments.concat(seg || node.segment || '');
+            planWalk(node.children || [], depth + 1, nextSegments);
+          } else if (node.type === 'page') {
+            if (isProtectedTitle(node.title)) continue;
+            if (!node.file) continue;
+            const base = node.is_overview
+              ? overviewBasenameForNode(node)
+              : `${formatNameByDepth(node.title, depth, 'page')}${fileExtForNode(node)}`;
+            const currentRel = String(node.file || '').replace(/^\.\//, '');
+            const slashAt = currentRel.lastIndexOf('/');
+            const currentDir = slashAt >= 0 ? currentRel.slice(0, slashAt) : '';
+            const currentDirParts = currentDir ? currentDir.split('/').filter(Boolean) : [];
+            const parentDir = parentSegments.join('/');
+            let targetDir = parentDir;
+            if (currentDirParts.length) {
+              const tail = currentDirParts.length > parentSegments.length
+                ? currentDirParts.slice(parentSegments.length)
+                : [];
+              targetDir = parentDir && tail.length ? `${parentDir}/${tail.join('/')}` : (parentDir || currentDir);
+            }
+            const newRel = targetDir ? `${targetDir}/${base}` : base;
+            const newBase = newRel.split('/').pop() || base;
+            const oldBase = currentRel.split('/').pop() || '';
+            if (newBase && oldBase && newBase !== oldBase) {
+              pagePlans.push({ id: node.id, targetDir, oldBase, newBase });
             }
           }
-        };
-        walk(stateTree, 1, []);
-      });
+        }
+      };
 
-      applyFilePrevFromCurrent(stateTree, beforeFileMap);
+      planWalk(stateTree, 1, []);
+
+      for (const plan of folderPlans) {
+        if (!plan.oldDir || !plan.newSeg) continue;
+        const parentDir = plan.oldDir.split('/').slice(0, -1).join('/');
+        const newDir = parentDir ? `${parentDir}/${plan.newSeg}` : plan.newSeg;
+        if (plannedDirNews.has(newDir)) {
+          planErrors.push({ type: 'duplicate_target', target: newDir });
+        }
+        plannedDirOlds.add(plan.oldDir);
+        plannedDirNews.add(newDir);
+      }
+      for (const plan of pagePlans) {
+        const dir = plan.targetDir || '';
+        const newFile = dir ? `${dir}/${plan.newBase}` : plan.newBase;
+        if (plannedDirNews.has(dir) || plannedDirOlds.has(dir)) {
+          // ok: parent renamed in same operation
+        }
+        if (!plan.newBase || plan.newBase === plan.oldBase) continue;
+        if (plannedDirNews.has(newFile) || plannedDirOlds.has(newFile)) {
+          planErrors.push({ type: 'duplicate_target', target: newFile });
+        }
+        plannedDirNews.add(newFile);
+      }
+
+      if (planErrors.length) {
+        showSyncErrors('Normalize blocked: duplicate targets.', planErrors);
+        setStatus('Normalize blocked: duplicate targets.', 'error');
+        return;
+      }
+
+      try {
+        const preflight = await fetchJson('/api/preflight_renames', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            dirs: folderPlans.map(p => ({ dir: p.oldDir, new_segment: p.newSeg })),
+            files: pagePlans.map(p => {
+              const dir = p.targetDir || '';
+              const oldFile = dir ? `${dir}/${p.oldBase}` : p.oldBase;
+              return { old_file: oldFile, new_basename: p.newBase };
+            })
+          })
+        });
+        const preErrors = preflight && Array.isArray(preflight.errors) ? preflight.errors : [];
+        if (preErrors.length) {
+          showSyncErrors('Normalize blocked: preflight failed.', preErrors);
+          setStatus('Normalize blocked: preflight failed.', 'error');
+          return;
+        }
+      } catch (e) {
+        const msg = e && e.message ? e.message : 'Normalize failed (preflight).';
+        const details = e && e.data ? [e.data] : [{ error: msg }];
+        showSyncErrors(msg, details);
+        setStatus(msg, 'error');
+        return;
+      }
+
+      folderPlans.sort((a, b) => b.depth - a.depth);
+      for (const plan of folderPlans) {
+        if (!plan.oldDir || !plan.newSeg) continue;
+        try {
+          const data = await fetchJson('/api/rename_dir', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ dir: plan.oldDir, new_segment: plan.newSeg })
+          });
+          const nodeInfo = findNode(stateTree, plan.id);
+          if (nodeInfo && nodeInfo.node) {
+            nodeInfo.node.segment = data.segment || plan.newSeg;
+          }
+        } catch (e) {
+          const msg = e && e.message ? e.message : 'Normalize failed (rename folder).';
+          const details = e && e.data ? [e.data] : [{ error: msg, dir: plan.oldDir, new_segment: plan.newSeg }];
+          showSyncErrors(msg, details);
+          setStatus(msg, 'error');
+          await loadState({ reset: true, silentStatus: true });
+          await loadSource();
+          return;
+        }
+      }
+
+      for (const plan of pagePlans) {
+        const dir = plan.targetDir || '';
+        const oldFile = dir ? `${dir}/${plan.oldBase}` : plan.oldBase;
+        try {
+          const data = await fetchJson('/api/rename_file', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ old_file: oldFile, new_basename: plan.newBase })
+          });
+          const nodeInfo = findNode(stateTree, plan.id);
+          if (nodeInfo && nodeInfo.node) {
+            nodeInfo.node.file = data.file || (dir ? `${dir}/${plan.newBase}` : plan.newBase);
+            nodeInfo.node.file_prev = null;
+          }
+        } catch (e) {
+          const msg = e && e.message ? e.message : 'Normalize failed (rename file).';
+          const details = e && e.data ? [e.data] : [{ error: msg, file: oldFile, new_basename: plan.newBase }];
+          showSyncErrors(msg, details);
+          setStatus(msg, 'error');
+          await loadState({ reset: true, silentStatus: true });
+          await loadSource();
+          return;
+        }
+      }
+
+      applyFilePrevFromCurrent(stateTree, buildFileMap(beforeTree));
       renderTree();
       updateHistoryButtons();
-      setStatus('Normalizing and syncing files...', 'info');
-      await sync('sync_files', { confirm: false, silent: false, payload: { preserve_page_dirs: true } });
+      setStatus('Normalized names on disk.', 'success');
+      scheduleNavOnly('normalize.names');
     }
 
     function beginInlineEdit(id, field, hostEl) {
