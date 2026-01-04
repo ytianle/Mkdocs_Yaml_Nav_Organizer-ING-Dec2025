@@ -969,9 +969,9 @@ def _section_readme_template(section_name: str) -> str:
         "{% set base_path = page.file.src_path | replace('README.md', '') %}\n\n"
         "{% for p in page.parent.children %}\n"
         "{% if (p.is_section or p.is_page) and p.file and p.file.src_path and p.file.src_path != page.file.src_path %}\n"
-        "1. [{{ p.title }}]({{ p.file.src_path | replace(base_path, '') }})\n"
+        "1. [{{ p.title }}]({{ p.file.src_path | replace(base_path, '', 1) }})\n"
         "{% elif p.is_section and p.children and p.children[0].file and p.children[0].file.src_path %}\n"
-        "1. [{{ p.title }}]({{ p.children[0].file.src_path | replace(base_path, '') }})\n"
+        "1. [{{ p.title }}]({{ p.children[0].file.src_path | replace(base_path, '', 1) }})\n"
         "{% endif %}\n"
         "{% endfor %}\n"
     )
