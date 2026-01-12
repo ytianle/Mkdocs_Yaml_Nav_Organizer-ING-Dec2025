@@ -963,9 +963,12 @@ def _create_missing_page(file_rel: str, title: str) -> None:
 def _section_readme_template(section_name: str) -> str:
     name = (section_name or "").strip() or "Section"
     tpl = Template(
+        "---\n"
+        "icon: material/library-books\n"
+        "---\n\n"
         "# **$section**\n\n"
-        "> fill chapter introduction here\n\n"
-        "### **This chapter can be separated into the following sections:**\n\n"
+        "> fill chapter introduction here\n"
+        "## **This chapter can be separated into the following sections:**\n\n"
         "{% set base_path = page.file.src_path | replace('README.md', '') %}\n\n"
         "{% for p in page.parent.children %}\n"
         "{% if (p.is_section or p.is_page) and p.file and p.file.src_path and p.file.src_path != page.file.src_path %}\n"
