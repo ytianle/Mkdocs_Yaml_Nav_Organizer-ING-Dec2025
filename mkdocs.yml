@@ -1,26 +1,30 @@
 site_name: MkDocs Nav Manager
 nav:
   - Section 1:
-    - section1/index.md
-    - Page 2: section1/page2.md
+    - section_1/index.md
+    - Page 2: section_1/page_2.md
     - subsection:
-      - section1/subsection/page3.md
+      - section_1/subsection/README.md
       - 33r:
-        - section1/subsection/33r/README.md
-        - '33': section1/subsection/33r/33.md
+        - section_1/subsection/33r/README.md
+        - '33': section_1/subsection/33r/33.md
       - '2332':
-        - section1/subsection/2332/README.md
-        - '11': section1/subsection/2332/11.md
+        - section_1/subsection/2332/README.md
+        - '11': section_1/subsection/2332/11.md
         - '22':
-          - section1/subsection/2332/22/README.md
-          - ss:
-            - section1/subsection/2332/22/ss/README.md
-            - '444':
-              - section1/subsection/2332/22/ss/444/README.md
-              - '99': section1/subsection/2332/22/ss/444/99.md
+          - section_1/subsection/2332/22/README.md
+          - his 你好 is 6 &!@#$$%^^& 2:
+            - section_1/subsection/2332/22/his_你好_is_6_sharp_2/README.md
+            - 332w\4/4:
+              - section_1/subsection/2332/22/his_你好_is_6_sharp_2/332w_4_4/README.md
+              - '99': section_1/subsection/2332/22/his_你好_is_6_sharp_2/332w_4_4/99.md
               - '77':
-                - section1/subsection/2332/22/ss/444/77/README.md
-                - '99': section1/subsection/2332/22/ss/444/77/99.md
-            - '22': section1/subsection/2332/22/ss/22.md
+                - section_1/subsection/2332/22/his_你好_is_6_sharp_2/332w_4_4/77/README.md
+                - '99': section_1/subsection/2332/22/his_你好_is_6_sharp_2/332w_4_4/77/99.md
+              - '777': section_1/subsection/2332/22/his_你好_is_6_sharp_2/332w_4_4/777/777.md
+            - '22': section_1/subsection/2332/22/his_你好_is_6_sharp_2/22.md
             - ww:
-              - section1/subsection/2332/22/ss/ww/README.md
+              - section_1/subsection/2332/22/his_你好_is_6_sharp_2/ww/README.md
+  - This is a m & 6:
+    - this_is_a_m_6/README.md
+    - this is Mys 1%6: this_is_a_m_6/this_is_mys_1_6/this_is_mys_1_6.md

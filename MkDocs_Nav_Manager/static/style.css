@@ -1347,6 +1347,7 @@ body.theme-light .source-name.kind-file {
   padding: 0 8px;
   border: 1px solid transparent;
   border-radius: 10px;
+  min-width: 0;
 }
 
 .row-left {
@@ -1354,7 +1355,7 @@ body.theme-light .source-name.kind-file {
   align-items: center;
   gap: 10px;
   min-width: 0;
-  flex: 0 0 auto;
+  flex: 1 1 auto;
 }
 
 .overview-inline {
@@ -2073,7 +2074,8 @@ body.theme-light .overview-empty {
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 50%;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-width: 0;
 }
 
 /* Non-rainbow mode: page selected with orange ants */
@@ -2354,6 +2356,12 @@ body.theme-light .debug-log {
   .main-grid {
     grid-template-columns: 1fr;
     grid-template-rows: minmax(0, 1fr) var(--split) minmax(0, 1fr);
+  }
+
+  .workspace.single-main .main-grid,
+  .workspace.no-source .main-grid,
+  .workspace.no-tree .main-grid {
+    grid-template-rows: minmax(0, 1fr);
   }
 
   #split-main-left {
