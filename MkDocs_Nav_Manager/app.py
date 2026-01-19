@@ -1145,7 +1145,7 @@ def _section_readme_template(section_name: str) -> str:
     name = (section_name or "").strip() or "Section"
     tpl = Template(
         "---\n"
-        "icon: material/library-books\n"
+        "icon: material/library\n"
         "---\n\n"
         "# **$section**\n\n"
         "> fill chapter introduction here\n"

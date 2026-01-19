@@ -509,6 +509,10 @@ body.theme-light .card {
   align-items: center;
 }
 
+.tree-actions-row button {
+  font-size: 12px;
+}
+
 .tree-search {
   display: flex;
   align-items: center;

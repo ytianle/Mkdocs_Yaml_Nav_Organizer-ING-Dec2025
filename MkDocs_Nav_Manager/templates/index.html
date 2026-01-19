@@ -107,6 +107,7 @@
       <button type="button" data-action="rename" data-shortcut="F2">✏️ Rename <span class="context-shortcut">F2</span></button>
       <button type="button" data-action="locate" data-shortcut="Opt(Alt)+L">🧭 Locate <span class="context-shortcut">Opt(Alt)+L</span></button>
       <button type="button" data-action="open" data-shortcut="Opt(Alt)+O">📂 Open <span class="context-shortcut">Opt(Alt)+O</span></button>
+      <button type="button" data-action="open-web" data-shortcut="Opt(Alt)+W">🌐 Rendered <span class="context-shortcut">Opt(Alt)+W</span></button>
       <button type="button" data-action="edit" data-shortcut="Opt(Alt)+E">📝 Edit <span class="context-shortcut">Opt(Alt)+E</span></button>
       <button type="button" data-action="delete" class="danger" data-shortcut="Del/Backspace">🗑️ Delete <span class="context-shortcut">Del/Backspace</span></button>
     </div>
@@ -222,6 +223,9 @@
                   </button>
                   <button id="open-file-btn" type="button" class="ghost" data-help="Open selected page in editor or default viewer" data-shortcut="Opt(Alt)+O">
                     📂 Open
+                  </button>
+                  <button id="open-doc-web-btn" type="button" class="ghost" data-help="Open selected page in rendered MkDocs site (make sure run MkDocs server first)" data-shortcut="Opt(Alt)+W">
+                    🌐 Rendered Page
                   </button>
                   <button id="simple-edit-btn" type="button" class="ghost" data-help="Open selected page in Simple Edit" data-shortcut="Opt(Alt)+E">
                     📝 Edit
@@ -386,6 +390,9 @@
     let treeSearchQuery = '';
     let treeSearchMatches = [];
     let treeSearchIndex = -1;
+    let updateTreeActionButtons = () => {};
+    let docsRoot = '';
+    const mkdocsServeUrl = 'http://127.0.0.1:8000/';
     // Registry for one-time global handlers that clear the persistent located highlight
     let locatedClearHandlers = [];
     // Suppress clearing for a short window right after installing handlers
@@ -454,6 +461,7 @@
         treeSearchClear: document.getElementById('tree-search-clear'),
         treeLocateBtn: document.getElementById('tree-locate-btn'),
         openFileBtn: document.getElementById('open-file-btn'),
+        openDocWebBtn: document.getElementById('open-doc-web-btn'),
         simpleEditBtn: document.getElementById('simple-edit-btn'),
         treeContext: document.getElementById('tree-context'),
         simpleEditor: document.getElementById('simple-editor'),
@@ -651,6 +659,10 @@
           e.preventDefault();
           return openSelectedFile();
         }
+        if (alt && code === 'KeyW') {
+          e.preventDefault();
+          return openSelectedDocWeb();
+        }
         if (alt && code === 'KeyE') {
           e.preventDefault();
           return openSimpleEditorFromSelection();
@@ -774,6 +786,56 @@
         }
       };
       if (els.openFileBtn) els.openFileBtn.addEventListener('click', openSelectedFile);
+
+      function openMkdocsUrl(url) {
+        if (!url) return;
+        const screenLeft = Number.isFinite(window.screen?.availLeft) ? window.screen.availLeft : 0;
+        const screenTop = Number.isFinite(window.screen?.availTop) ? window.screen.availTop : 0;
+        const screenWidth = window.screen?.availWidth || window.innerWidth;
+        const screenHeight = window.screen?.availHeight || window.innerHeight;
+        const splitWidth = Math.max(520, Math.floor(screenWidth / 2));
+        const left = screenLeft + Math.max(0, screenWidth - splitWidth);
+        const features = `popup,width=${splitWidth},height=${screenHeight},left=${left},top=${screenTop},noopener`;
+        let win = null;
+        try { win = window.open(url, '_blank', features); } catch (e) { win = null; }
+        if (!win) {
+          window.open(url, '_blank', 'noopener');
+          return;
+        }
+        win.focus();
+      }
+
+      function buildMkdocsUrlForFile(file) {
+        if (!file) return '';
+        const cleaned = String(file).replace(/\\/g, '/').replace(/^\.\//, '');
+        const normalizedRoot = String(docsRoot || '').replace(/\\/g, '/').replace(/\/+$/, '');
+        let rel = cleaned;
+        if (normalizedRoot && rel.startsWith(normalizedRoot)) {
+          rel = rel.slice(normalizedRoot.length).replace(/^\/+/, '');
+        }
+        rel = rel.replace(/^\/+/, '');
+        const isReadme = /(?:^|\/)(readme|index)\.md$/i.test(rel);
+        let path = rel;
+        if (isReadme) {
+          path = rel.replace(/(?:^|\/)(readme|index)\.md$/i, '');
+        } else {
+          path = rel.replace(/\.(md|markdown)$/i, '');
+        }
+        path = path.replace(/^\/+/, '').replace(/\/+$/, '');
+        if (!path) return mkdocsServeUrl;
+        const encoded = path.split('/').map(seg => encodeURIComponent(seg)).join('/');
+        return `${mkdocsServeUrl}${encoded}/`;
+      }
+
+      const openSelectedDocWeb = () => {
+        let id = selectedId || (selectedIds && selectedIds.size ? Array.from(selectedIds)[0] : '');
+        const file = resolveSelectedFile(id);
+        if (!file) return setStatus('⚠️ No page selected to open in web.', 'info');
+        const url = buildMkdocsUrlForFile(file);
+        if (!url) return setStatus('⚠️ Unable to build MkDocs URL.', 'error');
+        openMkdocsUrl(url);
+      };
+      if (els.openDocWebBtn) els.openDocWebBtn.addEventListener('click', openSelectedDocWeb);
 
       const editorState = {
         currentFile: '',
@@ -1173,10 +1235,21 @@
           let enabled = true;
           if (action === 'rename') enabled = !!selectedId;
           if (action === 'delete') enabled = !!selectedId || (selectedIds && selectedIds.size);
-          if (action === 'locate' || action === 'open' || action === 'edit') enabled = hasFile;
-          if (!hasSelection && (action === 'rename' || action === 'delete' || action === 'locate' || action === 'open' || action === 'edit')) enabled = false;
+          if (action === 'locate' || action === 'open' || action === 'open-web' || action === 'edit') enabled = hasFile;
+          if (!hasSelection && (action === 'rename' || action === 'delete' || action === 'locate' || action === 'open' || action === 'open-web' || action === 'edit')) enabled = false;
           btn.disabled = !enabled;
         });
+      };
+
+      updateTreeActionButtons = () => {
+        const hasSelection = !!selectedId || (selectedIds && selectedIds.size) || !!selectedDisplaySlotFolderId;
+        const hasFile = !!resolveSelectedFile('');
+        if (els.deleteBtn) els.deleteBtn.disabled = !(selectedId || (selectedIds && selectedIds.size));
+        if (els.treeLocateBtn) els.treeLocateBtn.disabled = !hasFile;
+        if (els.openFileBtn) els.openFileBtn.disabled = !hasFile;
+        if (els.openDocWebBtn) els.openDocWebBtn.disabled = !hasFile;
+        if (els.simpleEditBtn) els.simpleEditBtn.disabled = !hasFile;
+        if (!hasSelection && els.deleteBtn) els.deleteBtn.disabled = true;
       };
 
       const selectContextTarget = (target) => {
@@ -1227,6 +1300,7 @@
           if (action === 'delete') deleteSelected();
           if (action === 'locate') locateSelectedInSource();
           if (action === 'open') openSelectedFile();
+          if (action === 'open-web') openSelectedDocWeb();
           if (action === 'edit') openSimpleEditorFromSelection();
           hideTreeContext();
         });
@@ -1335,21 +1409,7 @@
       }
       if (els.mkdocsOpenBtn) {
         els.mkdocsOpenBtn.addEventListener('click', () => {
-          const url = 'http://127.0.0.1:8000/';
-          const screenLeft = Number.isFinite(window.screen?.availLeft) ? window.screen.availLeft : 0;
-          const screenTop = Number.isFinite(window.screen?.availTop) ? window.screen.availTop : 0;
-          const screenWidth = window.screen?.availWidth || window.innerWidth;
-          const screenHeight = window.screen?.availHeight || window.innerHeight;
-          const splitWidth = Math.max(520, Math.floor(screenWidth / 2));
-          const left = screenLeft + Math.max(0, screenWidth - splitWidth);
-          const features = `popup,width=${splitWidth},height=${screenHeight},left=${left},top=${screenTop},noopener`;
-          let win = null;
-          try { win = window.open(url, '_blank', features); } catch (e) { win = null; }
-          if (!win) {
-            window.open(url, '_blank', 'noopener');
-            return;
-          }
-          win.focus();
+          openMkdocsUrl(mkdocsServeUrl);
         });
       }
 
@@ -2666,6 +2726,7 @@
       try {
         const data = await fetchJson('/api/meta');
         const text = `${data.mkdocs_path} | ${data.docs_root}`;
+        docsRoot = data.docs_root || '';
         els.meta.textContent = shortenPathLine(text);
         els.meta.title = text;
         setInfoMeta(text);
@@ -3419,6 +3480,7 @@
       els.tree.appendChild(dropLineEl);
       hideDropLine();
       updateSelectionInfo();
+      updateTreeActionButtons();
       if (!stateTree.length) {
         const hint = document.createElement('div');
         hint.className = 'empty-hint';
@@ -3513,6 +3575,7 @@
 	      }
 	      updateSelectionInfo();
         maybeLoadEditorFromSelection();
+        updateTreeActionButtons();
 	    }
 
     function selectWithModifiers(id, e) {
