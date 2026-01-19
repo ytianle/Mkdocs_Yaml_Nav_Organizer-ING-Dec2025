@@ -1,6 +1,50 @@
-# MkDocs Nav Manager
+<p align="center">
+  <img src="logo.png" width="120" alt="MkDocs Nav Manager logo">
+</p>
+<h1 align="center">MkDocs Nav Manager</h1>
+<p align="center">
+  <strong>Visual editor for MkDocs navigation and docs structure</strong>
+</p>
 
-Drop `MkDocs_Nav_Manager/` into the root of your MkDocs project (next to `mkdocs.yml`) to edit `nav` using a Confluence-like page tree and keep `docs/` (or `doc/`) synced on disk.
+> Drop `MkDocs_Nav_Manager/` into the root of your MkDocs project (next to `mkdocs.yml`) to edit `nav` using a Confluence-like page tree and keep `docs/` (or `doc/`) synced on disk.
+
+## Major Capabilities
+
+### Navigation + Docs Sync
+
+- Confluence-like tree that maps directly to `mkdocs.yml` nav.
+- Creates, moves, and deletes pages/sections while keeping the filesystem in sync.
+- Keeps `docs/` (or `doc/`) aligned with the tree structure.
+
+### Editing Experience
+
+- Dockable layout with resizable split panels.
+- Source explorer linked to the Doc Tree (including optional ASCII view).
+- Inline rename for pages, sections, and filenames (no dialogs).
+- Precision drag & drop with clear before/after/inside indicators.
+- Optional rainbow level colors for quick hierarchy scanning.
+
+### Safety + Reliability
+
+- Safe deletes: prevents removing non-empty sections; page delete also removes its `.md` and sibling asset folder.
+- Undo/Redo that tracks filesystem changes (last 5 steps stored in browser).
+- Conflict safety: blocks sync if a target path already exists.
+
+### Embedded MkDocs Serve
+
+- Start/stop `mkdocs serve --livereload` from the toolbar.
+- Live status + log monitor inside the Info panel.
+- One-click open of the rendered site in the browser.
+
+### Simple Editor
+
+- Built-in “Simple Edit” markdown editor for the selected page.
+- Line numbers, lightweight markdown highlighting, and +/~/- change counters.
+- Save/Abort controls and `Ctrl/Cmd+S` quick save.
+
+### Visuals
+
+- Day/Night theme toggle and optional Debug panel.
 
 ## Quick Start
 
@@ -10,17 +54,6 @@ Drop `MkDocs_Nav_Manager/` into the root of your MkDocs project (next to `mkdocs
 
 Open: `http://127.0.0.1:5000`
 
-## UI Features
-
-- Dockable layout: toggle `Tools`, `Source`, `Doc Tree`, and `Info`; drag splitters to resize.
-- Source explorer: browse markdown files, click to locate in Doc Tree; optional ASCII view.
-- Doc Tree editor: Confluence-like hierarchy where sections visually contain children.
-- Precision drag & drop: blue indicator line + mouse-position detector (before/after/inside).
-- Inline rename (no dialogs): double-click page title, section folder segment, or page filename (basename only).
-- Safe deletes: blocks deleting non-empty sections; deleting a page also deletes its `.md` and sibling asset folder.
-- Undo/Redo (file-aware): updates both tree and filesystem; keeps last 5 steps in browser storage.
-- Conflict safety: if a target path already exists, sync is blocked and nothing is written/changed.
-- Day/Night theme toggle and optional Debug panel.
 ![night](night.png)
 ![day](day.png)
 
