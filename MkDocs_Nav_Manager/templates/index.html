@@ -80,6 +80,15 @@
           </svg>
         </button>
         <span class="action-divider" aria-hidden="true">|</span>
+        <button id="toggle-icons-panel" type="button" class="ghost icon-button" data-help="Icons & emoji search"
+          aria-label="Toggle icons search">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+            <circle cx="7" cy="7" r="4.2"/>
+            <path d="M10.5 10.5L13.2 13.2"/>
+            <path d="M5.6 6.4c.5-.5 1.4-.5 1.9 0"/>
+            <path d="M6.2 8.6c.6.7 1.9.7 2.6 0"/>
+          </svg>
+        </button>
         <button id="toggle-simple-editor" type="button" class="ghost" data-help="simple md file editor">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
             <path d="M11.5 2.5l2 2-7 7-2.5.5.5-2.5 7-7z"/>
@@ -315,6 +324,36 @@
         </div>
       </section>
 
+      <section class="card panel icons-panel" id="icons-panel" hidden>
+        <div class="card-head">
+          <h2>Icons & Emojis</h2>
+          <div class="inline-actions">
+            <span id="icons-status" class="muted"></span>
+            <button id="icons-reload" type="button" class="ghost" data-help="Reload icon data" aria-label="Reload">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 8a5 5 0 1 0 2-4"/>
+                <path d="M3 3v3h3"/>
+              </svg>
+            </button>
+            <button id="icons-close" type="button" class="ghost" data-help="Close" aria-label="Close">✕</button>
+          </div>
+        </div>
+        <div class="icons-body">
+          <div class="icons-search-row">
+            <input id="icons-search-input" class="icons-search-input" type="text" autocomplete="off"
+              placeholder="Search icons or emojis... (e.g. home, smile, fontawesome)" aria-label="Search icons or emojis">
+            <span id="icons-match-count" class="icons-match-count" aria-live="polite"></span>
+            <div class="segmented icons-filters" role="group" aria-label="Icon filters">
+              <button id="icons-filter-all" type="button" class="ghost active" data-filter="all">All</button>
+              <button id="icons-filter-icons" type="button" class="ghost" data-filter="icon">Icons</button>
+              <button id="icons-filter-emojis" type="button" class="ghost" data-filter="emoji">Emojis</button>
+            </div>
+          </div>
+          <div id="icons-hint" class="icons-hint">Type to search. Click a result to copy its MkDocs shortcode.</div>
+          <div id="icons-results" class="icons-results" aria-live="polite"></div>
+        </div>
+      </section>
+
       <div class="modal" id="modal" hidden>
         <div class="modal-backdrop"></div>
         <div class="modal-card" role="dialog" aria-modal="true">
@@ -393,6 +432,21 @@
     let updateTreeActionButtons = () => {};
     let docsRoot = '';
     const mkdocsServeUrl = 'http://127.0.0.1:8000/';
+    const iconsearchIndexUrl = '/api/icons_index';
+    const svgCache = new Map();
+    let iconsPanelVisible = false;
+    let iconsFilter = 'all';
+    let iconsQuery = '';
+    const iconsBatchSize = 200;
+    let iconsMatchStats = { total: 0, displayed: 0, truncated: false };
+    let iconsResultState = { entries: [], rendered: 0 };
+    let iconsCache = {
+      loaded: false,
+      loading: false,
+      error: '',
+      entries: [],
+      counts: { icons: 0, emojis: 0 }
+    };
     // Registry for one-time global handlers that clear the persistent located highlight
     let locatedClearHandlers = [];
     // Suppress clearing for a short window right after installing handlers
@@ -448,6 +502,7 @@
         toggleSource: document.getElementById('toggle-source'),
         toggleTree: document.getElementById('toggle-tree'),
         toggleInfo: document.getElementById('toggle-info'),
+        toggleIconsPanel: document.getElementById('toggle-icons-panel'),
         toggleSimpleEditor: document.getElementById('toggle-simple-editor'),
         toggleTheme: document.getElementById('toggle-theme'),
         mkdocsStartBtn: document.getElementById('mkdocs-start-btn'),
@@ -465,6 +520,17 @@
         simpleEditBtn: document.getElementById('simple-edit-btn'),
         treeContext: document.getElementById('tree-context'),
         simpleEditor: document.getElementById('simple-editor'),
+        iconsPanel: document.getElementById('icons-panel'),
+        iconsClose: document.getElementById('icons-close'),
+        iconsReload: document.getElementById('icons-reload'),
+        iconsSearchInput: document.getElementById('icons-search-input'),
+        iconsResults: document.getElementById('icons-results'),
+        iconsHint: document.getElementById('icons-hint'),
+        iconsStatus: document.getElementById('icons-status'),
+        iconsMatchCount: document.getElementById('icons-match-count'),
+        iconsFilterAll: document.getElementById('icons-filter-all'),
+        iconsFilterIcons: document.getElementById('icons-filter-icons'),
+        iconsFilterEmojis: document.getElementById('icons-filter-emojis'),
         simpleEditFile: document.getElementById('simple-edit-file'),
         simpleEditDiff: document.getElementById('simple-edit-diff'),
         simpleEditAbort: document.getElementById('simple-edit-abort'),
@@ -692,12 +758,16 @@
         const target = e.target;
         const inTree = els.tree.contains(target) || els.panelTree.contains(target);
         const inEditor = els.simpleEditor && !els.simpleEditor.hidden && els.simpleEditor.contains(target);
+        const inIconsPanel = els.iconsPanel && !els.iconsPanel.hidden && els.iconsPanel.contains(target);
         const inEditorControl = target && target.closest
           ? target.closest('#toggle-simple-editor, #simple-edit-btn, #simple-edit-save, #simple-edit-abort, #simple-edit-close')
           : null;
+        const inIconsControl = target && target.closest
+          ? target.closest('#toggle-icons-panel, #icons-close, #icons-reload')
+          : null;
         const inModal = els.modal && !els.modal.hidden && els.modal.contains(target);
         // Check if click is outside tree panel and not part of the simple editor flow
-        if (!inTree && !inEditor && !inEditorControl && !inModal) {
+        if (!inTree && !inEditor && !inEditorControl && !inIconsPanel && !inIconsControl && !inModal) {
           // Deselect all
           selectedId = '';
           selectedIds = new Set();
@@ -1000,6 +1070,382 @@
         if (els.toggleSimpleEditor) {
           if (show) els.toggleSimpleEditor.classList.add('active');
           else els.toggleSimpleEditor.classList.remove('active');
+        }
+      }
+
+      function setIconsPanelVisible(show) {
+        if (!els.iconsPanel) return;
+        iconsPanelVisible = show;
+        els.iconsPanel.hidden = !show;
+        if (els.toggleIconsPanel) {
+          if (show) els.toggleIconsPanel.classList.add('active');
+          else els.toggleIconsPanel.classList.remove('active');
+        }
+      }
+
+      function normalizeTextTokens(text) {
+        return String(text || '')
+          .toLowerCase()
+          .trim()
+          .replace(/[\s\-_/:\.]+/g, ' ')
+          .split(' ')
+          .filter(Boolean);
+      }
+
+      function normalizeIndexEntries(raw) {
+        if (!Array.isArray(raw)) return [];
+        const entries = [];
+        raw.forEach((item) => {
+          if (!item || typeof item !== 'object') return;
+          const type = String(item.type || '').toLowerCase();
+          if (type !== 'icon' && type !== 'emoji') return;
+          const name = typeof item.name === 'string' ? item.name.trim() : '';
+          const shortcode = typeof item.shortcode === 'string' ? item.shortcode.trim() : '';
+          const keywords = Array.isArray(item.keywords)
+            ? item.keywords.filter(k => typeof k === 'string' && k.trim()).map(k => k.trim())
+            : [];
+          const path = typeof item.path === 'string' ? item.path.trim() : '';
+          const svg = typeof item.svg === 'string' ? item.svg.trim() : '';
+          const unicode = typeof item.unicode === 'string' ? item.unicode : '';
+          const searchParts = [];
+          if (name) searchParts.push(name);
+          if (shortcode) searchParts.push(shortcode);
+          if (keywords.length) searchParts.push(keywords.join(' '));
+          const searchText = searchParts.join(' ').toLowerCase();
+          const searchTokens = normalizeTextTokens(searchText);
+          const searchCompact = searchText.replace(/[^\p{L}\p{N}]+/gu, '');
+          entries.push({ type, name, shortcode, keywords, path, svg, unicode, searchText, searchTokens, searchCompact });
+        });
+        return entries;
+      }
+
+      function resolveSvgPath(path) {
+        if (!path) return '';
+        if (/^https?:\/\//i.test(path)) return path;
+        if (path.startsWith('/')) return path;
+        return `/${path.replace(/^\.\//, '').replace(/^\./, '').replace(/^\/+/, '')}`;
+      }
+
+      async function loadSvg(path) {
+        if (!path) return null;
+        const resolved = resolveSvgPath(path);
+        if (svgCache.has(resolved)) return svgCache.get(resolved);
+        try {
+          const res = await fetch(resolved, { credentials: 'same-origin' });
+          if (!res.ok) throw new Error(`SVG fetch failed: ${res.status}`);
+          const text = await res.text();
+          svgCache.set(resolved, text);
+          return text;
+        } catch (err) {
+          svgCache.set(resolved, null);
+          return null;
+        }
+      }
+
+      function setIconsHint(message, show) {
+        if (!els.iconsHint) return;
+        els.iconsHint.textContent = message || '';
+        els.iconsHint.hidden = !show;
+      }
+
+      function updateIconsStatus(message) {
+        if (!els.iconsStatus) return;
+        if (els.iconsMatchCount) {
+          els.iconsMatchCount.textContent = '';
+        }
+        if (message) {
+          els.iconsStatus.textContent = message;
+          return;
+        }
+        if (iconsCache.loading) {
+          els.iconsStatus.textContent = 'Loading...';
+          return;
+        }
+        if (iconsCache.error && !iconsCache.entries.length) {
+          els.iconsStatus.textContent = 'Load failed';
+          return;
+        }
+        if (iconsQuery.trim()) {
+          const total = iconsMatchStats.total || 0;
+          const shown = iconsMatchStats.displayed || 0;
+          const truncated = iconsMatchStats.truncated;
+          if (truncated) {
+            els.iconsStatus.textContent = `Showing first ${shown} of ${total}`;
+          } else {
+            els.iconsStatus.textContent = `Matches: ${total}`;
+          }
+          if (els.iconsMatchCount) {
+            els.iconsMatchCount.textContent = truncated ? `${shown}/${total}` : `${total} matches`;
+          }
+          return;
+        }
+        els.iconsStatus.textContent = `Icons: ${iconsCache.counts.icons} | Emojis: ${iconsCache.counts.emojis}`;
+      }
+
+      function filterIconsResults(query, filter) {
+        const tokens = normalizeTextTokens(query);
+        if (!tokens.length) return [];
+        const queryText = tokens.join(' ');
+        const queryCompact = queryText.replace(/[^\p{L}\p{N}]+/gu, '');
+        const matches = [];
+        iconsCache.entries.forEach((entry) => {
+          if (filter === 'icon' && entry.type !== 'icon') return false;
+          if (filter === 'emoji' && entry.type !== 'emoji') return false;
+          const entryTokens = entry.searchTokens || [];
+          const entryText = entry.searchText || '';
+          const entryCompact = entry.searchCompact || '';
+          let score = 0;
+          const ok = tokens.every((token) => {
+            if (entryText.includes(token)) {
+              score += 3;
+              return true;
+            }
+            if (entryTokens.some((t) => t.startsWith(token))) {
+              score += 2;
+              return true;
+            }
+            if (entryCompact && isSubsequence(token, entryCompact)) {
+              score += 1;
+              return true;
+            }
+            return false;
+          });
+          if (!ok) return;
+          if (entryText.includes(queryText)) score += 6;
+          if (queryCompact && entryCompact.includes(queryCompact)) score += 4;
+          matches.push({ entry, score });
+        });
+        matches.sort((a, b) => {
+          if (b.score !== a.score) return b.score - a.score;
+          return (a.entry.name || '').localeCompare(b.entry.name || '');
+        });
+        return matches.map(item => item.entry);
+      }
+
+      function isSubsequence(needle, haystack) {
+        if (!needle || !haystack) return false;
+        let i = 0;
+        let j = 0;
+        while (i < needle.length && j < haystack.length) {
+          if (needle[i] === haystack[j]) i += 1;
+          j += 1;
+        }
+        return i === needle.length;
+      }
+
+      function renderIconPreview(preview, entry) {
+        if (entry.type === 'emoji') {
+          if (entry.unicode) {
+            preview.textContent = entry.unicode;
+            return;
+          }
+          if (entry.svg) {
+            preview.innerHTML = entry.svg;
+            return;
+          }
+          if (entry.path) {
+            preview.textContent = '🙂';
+            const currentKey = entry.name;
+            loadSvg(entry.path).then((svgText) => {
+              if (!svgText) return;
+              if (preview.closest('.icons-item')?.dataset?.name !== currentKey) return;
+              preview.innerHTML = svgText;
+              const svg = preview.querySelector('svg');
+              if (svg) {
+                svg.setAttribute('width', '20');
+                svg.setAttribute('height', '20');
+                svg.setAttribute('aria-hidden', 'true');
+                svg.removeAttribute('fill');
+              }
+            });
+            return;
+          }
+          preview.textContent = '🙂';
+          return;
+        }
+        if (entry.svg) {
+          preview.innerHTML = entry.svg;
+          return;
+        }
+        if (entry.path) {
+          preview.textContent = '.';
+          const currentKey = entry.name;
+          loadSvg(entry.path).then((svgText) => {
+            if (!svgText) return;
+            if (preview.closest('.icons-item')?.dataset?.name !== currentKey) return;
+            preview.innerHTML = svgText;
+            const svg = preview.querySelector('svg');
+            if (svg) {
+              svg.setAttribute('width', '20');
+              svg.setAttribute('height', '20');
+              svg.setAttribute('aria-hidden', 'true');
+              svg.removeAttribute('fill');
+            }
+          });
+          return;
+        }
+        preview.textContent = '.';
+      }
+
+      function renderIconsResults(entries, limit, append) {
+        if (!els.iconsResults) return;
+        if (!append) els.iconsResults.innerHTML = '';
+        const highlightTokens = normalizeTextTokens(iconsQuery);
+        const fragment = document.createDocumentFragment();
+        const max = Math.min(entries.length, limit);
+        for (let i = 0; i < max; i += 1) {
+          const entry = entries[i];
+          const item = document.createElement('div');
+          item.className = 'icons-item';
+          item.dataset.name = entry.name;
+          item.dataset.type = entry.type;
+          item.dataset.markup = entry.shortcode || '';
+
+          const preview = document.createElement('div');
+          preview.className = 'icons-preview';
+          renderIconPreview(preview, entry);
+
+          const meta = document.createElement('div');
+          meta.className = 'icons-meta';
+          const nameEl = document.createElement('div');
+          nameEl.className = 'icons-name';
+          setHighlightedText(nameEl, entry.name, highlightTokens);
+          const markupEl = document.createElement('div');
+          markupEl.className = 'icons-markup';
+          setHighlightedText(markupEl, entry.shortcode || '', highlightTokens);
+          meta.appendChild(nameEl);
+          meta.appendChild(markupEl);
+
+          const copy = document.createElement('button');
+          copy.type = 'button';
+          copy.className = 'ghost icons-copy';
+          copy.textContent = 'Copy';
+
+          item.appendChild(preview);
+          item.appendChild(meta);
+          item.appendChild(copy);
+          fragment.appendChild(item);
+        }
+        els.iconsResults.appendChild(fragment);
+      }
+
+      function setHighlightedText(el, text, tokens) {
+        if (!el) return;
+        el.textContent = '';
+        const raw = String(text || '');
+        if (!raw || !tokens.length) {
+          el.textContent = raw;
+          return;
+        }
+        const lower = raw.toLowerCase();
+        const ranges = [];
+        tokens.forEach((token) => {
+          if (!token) return;
+          let start = 0;
+          while (true) {
+            const idx = lower.indexOf(token, start);
+            if (idx === -1) break;
+            ranges.push([idx, idx + token.length]);
+            start = idx + token.length;
+          }
+        });
+        if (!ranges.length) {
+          el.textContent = raw;
+          return;
+        }
+        ranges.sort((a, b) => (a[0] - b[0]) || (a[1] - b[1]));
+        const merged = [];
+        ranges.forEach(([s, e]) => {
+          const last = merged[merged.length - 1];
+          if (!last || s > last[1]) merged.push([s, e]);
+          else if (e > last[1]) last[1] = e;
+        });
+        let cursor = 0;
+        merged.forEach(([s, e]) => {
+          if (s > cursor) el.appendChild(document.createTextNode(raw.slice(cursor, s)));
+          const span = document.createElement('span');
+          span.className = 'icons-highlight';
+          span.textContent = raw.slice(s, e);
+          el.appendChild(span);
+          cursor = e;
+        });
+        if (cursor < raw.length) {
+          el.appendChild(document.createTextNode(raw.slice(cursor)));
+        }
+      }
+
+      function renderNextIconsBatch() {
+        const entries = iconsResultState.entries || [];
+        if (!entries.length) return;
+        const start = iconsResultState.rendered || 0;
+        if (start >= entries.length) return;
+        const slice = entries.slice(start, start + iconsBatchSize);
+        renderIconsResults(slice, slice.length, true);
+        iconsResultState.rendered = start + slice.length;
+        iconsMatchStats.displayed = iconsResultState.rendered;
+        iconsMatchStats.truncated = iconsResultState.rendered < iconsMatchStats.total;
+        updateIconsStatus();
+      }
+
+      function updateIconsResults() {
+        if (!els.iconsResults || !els.iconsHint) return;
+        if (iconsCache.loading) {
+          els.iconsResults.innerHTML = '';
+          setIconsHint('Loading icon data...', true);
+          updateIconsStatus();
+          return;
+        }
+        if (iconsCache.error && !iconsCache.entries.length) {
+          els.iconsResults.innerHTML = '';
+          setIconsHint(`Failed to load icons: ${iconsCache.error}`, true);
+          updateIconsStatus();
+          return;
+        }
+        const trimmed = iconsQuery.trim();
+        if (!trimmed) {
+          els.iconsResults.innerHTML = '';
+          setIconsHint('Type to search. Click a result to copy its MkDocs shortcode.', true);
+          updateIconsStatus();
+          return;
+        }
+        const matches = filterIconsResults(trimmed, iconsFilter);
+        if (!matches.length) {
+          iconsMatchStats = { total: 0, displayed: 0, truncated: false };
+          iconsResultState = { entries: [], rendered: 0 };
+          els.iconsResults.innerHTML = '';
+          setIconsHint('No matches found.', true);
+          updateIconsStatus(`Matches: 0`);
+          return;
+        }
+        setIconsHint('', false);
+        const total = matches.length;
+        iconsMatchStats = { total, displayed: 0, truncated: total > 0 };
+        iconsResultState = { entries: matches, rendered: 0 };
+        els.iconsResults.innerHTML = '';
+        renderNextIconsBatch();
+      }
+
+      async function loadIconsData(force) {
+        if (iconsCache.loading) return;
+        if (iconsCache.loaded && !force) return;
+        iconsCache.loading = true;
+        iconsCache.error = '';
+        updateIconsResults();
+        try {
+          const data = await fetchJson(iconsearchIndexUrl);
+          const entries = normalizeIndexEntries(data);
+          iconsCache.entries = entries;
+          iconsCache.loaded = entries.length > 0;
+          iconsCache.counts.icons = entries.filter((entry) => entry.type === 'icon').length;
+          iconsCache.counts.emojis = entries.filter((entry) => entry.type === 'emoji').length;
+          if (!entries.length) iconsCache.error = 'Index empty or invalid.';
+        } catch (e) {
+          iconsCache.error = e.message || 'Index load failed.';
+          iconsCache.entries = [];
+          iconsCache.loaded = false;
+        } finally {
+          iconsCache.loading = false;
+          updateIconsResults();
         }
       }
 
@@ -1383,6 +1829,74 @@
         setStatus('⚠️ Simple Edit opened. Select a page and click 🧾 Edit to load it.', 'info');
       });
 
+      if (els.toggleIconsPanel) els.toggleIconsPanel.addEventListener('click', async () => {
+        if (!els.iconsPanel) return;
+        const willShow = els.iconsPanel.hidden;
+        setIconsPanelVisible(willShow);
+        if (!willShow) return;
+        await loadIconsData(false);
+        if (els.iconsSearchInput) {
+          els.iconsSearchInput.focus();
+          els.iconsSearchInput.select();
+        }
+      });
+
+      if (els.iconsClose) els.iconsClose.addEventListener('click', () => {
+        setIconsPanelVisible(false);
+      });
+
+      if (els.iconsReload) els.iconsReload.addEventListener('click', async () => {
+        iconsCache.loaded = false;
+        iconsCache.entries = [];
+        await loadIconsData(true);
+        if (els.iconsSearchInput) {
+          els.iconsSearchInput.focus();
+          els.iconsSearchInput.select();
+        }
+      });
+
+      if (els.iconsSearchInput) {
+        els.iconsSearchInput.addEventListener('input', (e) => {
+          iconsQuery = e.target && typeof e.target.value === 'string' ? e.target.value : '';
+          updateIconsResults();
+        });
+      }
+
+      const iconsFilterButtons = [els.iconsFilterAll, els.iconsFilterIcons, els.iconsFilterEmojis].filter(Boolean);
+      iconsFilterButtons.forEach((btn) => {
+        btn.addEventListener('click', () => {
+          iconsFilter = btn.dataset.filter || 'all';
+          iconsFilterButtons.forEach((b) => b.classList.toggle('active', b === btn));
+          updateIconsResults();
+        });
+      });
+
+      if (els.iconsResults) {
+        els.iconsResults.addEventListener('click', async (e) => {
+          const item = e.target && e.target.closest ? e.target.closest('.icons-item') : null;
+          if (!item) return;
+          const markup = item.dataset.markup || '';
+          if (!markup) return;
+          try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              await navigator.clipboard.writeText(markup);
+              setStatus(`Copied ${markup}`, 'success');
+            } else {
+              setStatus('Clipboard unavailable.', 'info');
+            }
+          } catch (err) {
+            setStatus('Copy failed.', 'error');
+          }
+        });
+        els.iconsResults.addEventListener('scroll', () => {
+          if (!iconsResultState.entries.length) return;
+          const threshold = 120;
+          if (els.iconsResults.scrollTop + els.iconsResults.clientHeight >= els.iconsResults.scrollHeight - threshold) {
+            renderNextIconsBatch();
+          }
+        });
+      }
+
       if (els.mkdocsStartBtn) {
         els.mkdocsStartBtn.addEventListener('click', async () => {
           try {
@@ -1443,6 +1957,48 @@
             els.simpleEditor.style.top = `${rect.top}px`;
             els.simpleEditor.style.right = 'auto';
             els.simpleEditor.style.bottom = 'auto';
+            drag = {
+              offsetX: e.clientX - rect.left,
+              offsetY: e.clientY - rect.top,
+              width: rect.width,
+              height: rect.height
+            };
+            window.addEventListener('pointermove', onMove);
+            window.addEventListener('pointerup', onUp);
+          });
+        }
+      }
+
+      if (els.iconsPanel) {
+        const header = els.iconsPanel.querySelector('.card-head');
+        let drag = null;
+        const onMove = (e) => {
+          if (!drag || !els.iconsPanel) return;
+          const x = e.clientX - drag.offsetX;
+          const y = e.clientY - drag.offsetY;
+          const maxX = window.innerWidth - drag.width - 8;
+          const maxY = window.innerHeight - drag.height - 8;
+          const clampedX = Math.min(Math.max(x, 8), Math.max(8, maxX));
+          const clampedY = Math.min(Math.max(y, 8), Math.max(8, maxY));
+          els.iconsPanel.style.left = `${clampedX}px`;
+          els.iconsPanel.style.top = `${clampedY}px`;
+        };
+        const onUp = () => {
+          if (!drag) return;
+          window.removeEventListener('pointermove', onMove);
+          window.removeEventListener('pointerup', onUp);
+          drag = null;
+        };
+        if (header) {
+          header.addEventListener('pointerdown', (e) => {
+            if (e.button !== 0) return;
+            if (e.target && e.target.closest('button, input')) return;
+            if (!els.iconsPanel) return;
+            const rect = els.iconsPanel.getBoundingClientRect();
+            els.iconsPanel.style.left = `${rect.left}px`;
+            els.iconsPanel.style.top = `${rect.top}px`;
+            els.iconsPanel.style.right = 'auto';
+            els.iconsPanel.style.bottom = 'auto';
             drag = {
               offsetX: e.clientX - rect.left,
               offsetY: e.clientY - rect.top,

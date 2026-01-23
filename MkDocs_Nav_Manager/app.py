@@ -54,6 +54,7 @@ MKDOCS_LOGS: list[str] = []
 MKDOCS_LOG_LIMIT = 200
 MKDOCS_STOPPING = False
 MKDOCS_SUBSCRIBERS: list[queue.Queue[str]] = []
+ICONSEARCH_INDEX_PATH = BASE_DIR / "static" / "iconsearch_index.json"
 
 
 def _mkdocs_broadcast(payload: dict[str, Any]) -> None:
@@ -225,6 +226,120 @@ def _json_error(message: str, status: int = 400, **extra: Any):
     payload: dict[str, Any] = {"error": message}
     payload.update(extra)
     return jsonify(payload), status
+
+
+def _icon_entry(
+    *,
+    entry_type: str,
+    name: str,
+    shortcode: str,
+    path: str | None = None,
+    unicode_value: str | None = None,
+    keywords: list[str] | None = None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "type": entry_type,
+        "name": name,
+        "shortcode": shortcode,
+    }
+    if path:
+        payload["path"] = path
+    if unicode_value:
+        payload["unicode"] = unicode_value
+    if keywords:
+        payload["keywords"] = keywords
+    return payload
+
+
+def _join_base(base: str, path: str) -> str:
+    base = base.strip()
+    path = path.strip()
+    if not base:
+        return path
+    if base.endswith("/"):
+        base = base[:-1]
+    if path.startswith("/"):
+        path = path[1:]
+    return f"{base}/{path}"
+
+
+def _load_iconsearch_index() -> list[dict[str, Any]]:
+    if not ICONSEARCH_INDEX_PATH.exists():
+        raise FileNotFoundError(f"{ICONSEARCH_INDEX_PATH}")
+    raw = ICONSEARCH_INDEX_PATH.read_text(encoding="utf-8")
+    data = json.loads(raw)
+    if isinstance(data, list):
+        return data
+    if not isinstance(data, dict):
+        raise ValueError("iconsearch_index.json must be a JSON list or object")
+
+    entries: list[dict[str, Any]] = []
+    icons = data.get("icons") if isinstance(data.get("icons"), dict) else {}
+    emojis = data.get("emojis") if isinstance(data.get("emojis"), dict) else {}
+    icons_base = icons.get("base") if isinstance(icons.get("base"), str) else ""
+    emojis_base = emojis.get("base") if isinstance(emojis.get("base"), str) else ""
+    icons_data = icons.get("data") if isinstance(icons.get("data"), dict) else {}
+    emojis_data = emojis.get("data") if isinstance(emojis.get("data"), dict) else {}
+
+    for name, rel_payload in icons_data.items():
+        if not isinstance(name, str):
+            continue
+        path = ""
+        keywords = None
+        unicode_value = None
+        if isinstance(rel_payload, dict):
+            raw_path = rel_payload.get("path", rel_payload.get("svg"))
+            if raw_path is not None:
+                path = _join_base(icons_base, str(raw_path))
+            if isinstance(rel_payload.get("keywords"), list):
+                keywords = [str(k) for k in rel_payload["keywords"] if str(k).strip()]
+            if isinstance(rel_payload.get("unicode"), str):
+                unicode_value = rel_payload["unicode"]
+        else:
+            if rel_payload is not None:
+                path = _join_base(icons_base, str(rel_payload))
+        shortcode = f":{name.strip()}:"
+        entries.append(
+            _icon_entry(
+                entry_type="icon",
+                name=name,
+                shortcode=shortcode,
+                path=path or None,
+                unicode_value=unicode_value,
+                keywords=keywords,
+            )
+        )
+
+    for name, rel_payload in emojis_data.items():
+        if not isinstance(name, str):
+            continue
+        path = ""
+        keywords = None
+        unicode_value = None
+        if isinstance(rel_payload, dict):
+            raw_path = rel_payload.get("path", rel_payload.get("svg"))
+            if raw_path is not None:
+                path = _join_base(emojis_base, str(raw_path))
+            if isinstance(rel_payload.get("keywords"), list):
+                keywords = [str(k) for k in rel_payload["keywords"] if str(k).strip()]
+            if isinstance(rel_payload.get("unicode"), str):
+                unicode_value = rel_payload["unicode"]
+        else:
+            if rel_payload is not None:
+                path = _join_base(emojis_base, str(rel_payload))
+        shortcode = f":{name.strip()}:"
+        entries.append(
+            _icon_entry(
+                entry_type="emoji",
+                name=name,
+                shortcode=shortcode,
+                path=path or None,
+                unicode_value=unicode_value,
+                keywords=keywords,
+            )
+        )
+
+    return entries
 
 
 def _now_stamp() -> str:
@@ -1882,6 +1997,20 @@ def api_meta():
             "state_path": str(STATE_PATH),
         }
     )
+
+
+@app.route("/api/icons_index", methods=["GET"])
+def api_icons_index():
+    try:
+        data = _load_iconsearch_index()
+    except FileNotFoundError:
+        return _json_error(
+            f"Missing iconsearch_index.json at {ICONSEARCH_INDEX_PATH}.",
+            404,
+        )
+    except Exception as exc:
+        return _json_error(f"Failed to load iconsearch_index.json: {exc}", 500)
+    return jsonify(data)
 
 
 @app.route("/api/mkdocs/status", methods=["GET"])
