@@ -116,7 +116,7 @@
       <button type="button" data-action="rename" data-shortcut="F2">✏️ Rename <span class="context-shortcut">F2</span></button>
       <button type="button" data-action="locate" data-shortcut="Opt(Alt)+L">🧭 Locate <span class="context-shortcut">Opt(Alt)+L</span></button>
       <button type="button" data-action="open" data-shortcut="Opt(Alt)+O">📂 Open <span class="context-shortcut">Opt(Alt)+O</span></button>
-      <button type="button" data-action="open-web" data-shortcut="Opt(Alt)+W">🌐 Rendered <span class="context-shortcut">Opt(Alt)+W</span></button>
+      <button type="button" data-action="open-web" data-shortcut="Opt(Alt)+R">🌐 Rendered <span class="context-shortcut">Opt(Alt)+R</span></button>
       <button type="button" data-action="edit" data-shortcut="Opt(Alt)+E">📝 Edit <span class="context-shortcut">Opt(Alt)+E</span></button>
       <button type="button" data-action="delete" class="danger" data-shortcut="Del/Backspace">🗑️ Delete <span class="context-shortcut">Del/Backspace</span></button>
     </div>
@@ -233,7 +233,7 @@
                   <button id="open-file-btn" type="button" class="ghost" data-help="Open selected page in editor or default viewer" data-shortcut="Opt(Alt)+O">
                     📂 Open
                   </button>
-                  <button id="open-doc-web-btn" type="button" class="ghost" data-help="Open selected page in rendered MkDocs site (make sure run MkDocs server first)" data-shortcut="Opt(Alt)+W">
+                  <button id="open-doc-web-btn" type="button" class="ghost" data-help="Open selected page in rendered MkDocs site (make sure run MkDocs server first)" data-shortcut="Opt(Alt)+R">
                     🌐 Rendered Page
                   </button>
                   <button id="simple-edit-btn" type="button" class="ghost" data-help="Open selected page in Simple Edit" data-shortcut="Opt(Alt)+E">
@@ -725,6 +725,10 @@
           e.preventDefault();
           return openSelectedFile();
         }
+        if (alt && code === 'KeyR') {
+          e.preventDefault();
+          return openSelectedDocWeb();
+        }
         if (alt && code === 'KeyW') {
           e.preventDefault();
           return openSelectedDocWeb();
@@ -857,21 +861,25 @@
       };
       if (els.openFileBtn) els.openFileBtn.addEventListener('click', openSelectedFile);
 
+      async function ensureMkdocsUrlAvailable(url) {
+        if (!url) return false;
+        try {
+          const data = await fetchJson('/api/mkdocs/check', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url })
+          });
+          return !!(data && data.reachable);
+        } catch (e) {
+          return false;
+        }
+      }
+
       function openMkdocsUrl(url) {
         if (!url) return;
-        const screenLeft = Number.isFinite(window.screen?.availLeft) ? window.screen.availLeft : 0;
-        const screenTop = Number.isFinite(window.screen?.availTop) ? window.screen.availTop : 0;
-        const screenWidth = window.screen?.availWidth || window.innerWidth;
-        const screenHeight = window.screen?.availHeight || window.innerHeight;
-        const splitWidth = Math.max(520, Math.floor(screenWidth / 2));
-        const left = screenLeft + Math.max(0, screenWidth - splitWidth);
-        const features = `popup,width=${splitWidth},height=${screenHeight},left=${left},top=${screenTop},noopener`;
         let win = null;
-        try { win = window.open(url, '_blank', features); } catch (e) { win = null; }
-        if (!win) {
-          window.open(url, '_blank', 'noopener');
-          return;
-        }
+        try { win = window.open(url, '_blank', 'noopener'); } catch (e) { win = null; }
+        if (!win) return;
         win.focus();
       }
 
@@ -897,12 +905,16 @@
         return `${mkdocsServeUrl}${encoded}/`;
       }
 
-      const openSelectedDocWeb = () => {
+      const openSelectedDocWeb = async () => {
         let id = selectedId || (selectedIds && selectedIds.size ? Array.from(selectedIds)[0] : '');
         const file = resolveSelectedFile(id);
         if (!file) return setStatus('⚠️ No page selected to open in web.', 'info');
         const url = buildMkdocsUrlForFile(file);
         if (!url) return setStatus('⚠️ Unable to build MkDocs URL.', 'error');
+        const available = await ensureMkdocsUrlAvailable(mkdocsServeUrl);
+        if (!available) {
+          return setStatus('⚠️ MkDocs site not reachable. Please run `mkdocs serve` first.', 'info');
+        }
         openMkdocsUrl(url);
       };
       if (els.openDocWebBtn) els.openDocWebBtn.addEventListener('click', openSelectedDocWeb);
@@ -1922,7 +1934,11 @@
         });
       }
       if (els.mkdocsOpenBtn) {
-        els.mkdocsOpenBtn.addEventListener('click', () => {
+        els.mkdocsOpenBtn.addEventListener('click', async () => {
+          const available = await ensureMkdocsUrlAvailable(mkdocsServeUrl);
+          if (!available) {
+            return setStatus('⚠️ MkDocs site not reachable. Please run `mkdocs serve` first.', 'info');
+          }
           openMkdocsUrl(mkdocsServeUrl);
         });
       }

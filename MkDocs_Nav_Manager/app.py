@@ -19,6 +19,9 @@ from shutil import copy2
 from string import Template
 from typing import Any, Iterable
 from uuid import uuid4
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlparse
+from urllib.request import Request, urlopen
 
 from flask import Flask, jsonify, render_template, request, Response, stream_with_context
 from ruamel.yaml import YAML
@@ -220,6 +223,29 @@ def _mkdocs_snapshot() -> dict[str, Any]:
     snap = _mkdocs_monitor()
     snap["kind"] = "snapshot"
     return snap
+
+
+def _is_allowed_local_url(url: str) -> bool:
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return False
+    if parsed.scheme not in ("http", "https"):
+        return False
+    host = (parsed.hostname or "").lower()
+    return host in {"127.0.0.1", "localhost"}
+
+
+def _probe_url(url: str, *, timeout: float = 2.0) -> tuple[bool, int | None]:
+    try:
+        req = Request(url, method="GET", headers={"User-Agent": "mkdocs-nav-manager"})
+        with urlopen(req, timeout=timeout) as resp:
+            status = getattr(resp, "status", None)
+        return True, status
+    except HTTPError as exc:
+        return False, exc.code
+    except (URLError, Exception):
+        return False, None
 
 
 def _json_error(message: str, status: int = 400, **extra: Any):
@@ -2016,6 +2042,19 @@ def api_icons_index():
 @app.route("/api/mkdocs/status", methods=["GET"])
 def api_mkdocs_status():
     return jsonify(_mkdocs_status())
+
+
+@app.route("/api/mkdocs/check", methods=["POST"])
+def api_mkdocs_check():
+    data = request.get_json(silent=True) or {}
+    url = data.get("url") if isinstance(data, dict) else None
+    if not isinstance(url, str) or not url.strip():
+        return _json_error("`url` is required.", 400)
+    url = url.strip()
+    if not _is_allowed_local_url(url):
+        return _json_error("URL not allowed.", 400)
+    reachable, status = _probe_url(url)
+    return jsonify({"reachable": reachable, "status": status})
 
 
 @app.route("/api/mkdocs/monitor", methods=["GET"])
